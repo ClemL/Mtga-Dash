@@ -1,0 +1,21 @@
+## .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+.vscode/
+*.swp
+TestResults/
+*.trx
+publish/
+
+## Personal data: logs and the accounts CSV hold email addresses. Never commit them.
+*.db
+*.db-*
+testdata/
+data/
+logs/
+export/
+results/
+*.csv

@@ -1,0 +1,1418 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MtgaDash</title>
+<meta name="theme-color" content="#f6f7f9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#15181d" media="(prefers-color-scheme: dark)">
+<!-- Applies saved theme, density and text size before first paint; generated from Web/DisplayOptions.cs. -->
+<!--BOOT-->
+<style>
+/* Every font size is calc(<px> * var(--text-scale)) and the spacing below is what the density setting
+   changes; a new rule should use both, or it ignores the Settings menu. */
+:root {
+  color-scheme: light;
+  --bg: #f6f7f9;
+  --panel: #ffffff;
+  --panel-2: #eef0f3;
+  --border: #d9dce1;
+  --border-strong: #b8bdc6;
+  --fg: #1b1f24;
+  --fg-dim: #59616d;
+  --accent: #1f62c4;
+  --hover: #e8eef8;
+  --selected-border: #1f62c4;
+  --good: #137a2e;
+  --warn: #8a5800;
+  --bad: #b3261e;
+  --never: #626973;
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --scrim: rgba(15, 18, 22, 0.45);
+  --shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+
+  --text-scale: 1;
+  --line: 1.5;
+  --gap: 8px;
+  --bar-py: 10px;
+  --btn-py: 5px;
+  --btn-px: 10px;
+  --input-py: 5px;
+  --cell-py: 6px;
+  --cell-px: 8px;
+  --card-p: 14px;
+  --section-gap: 16px;
+  --block: 8px;
+  --target: 0px;
+}
+
+:root[data-density="compact"] {
+  --line: 1.35; --gap: 5px; --bar-py: 6px; --btn-py: 2px; --btn-px: 7px; --input-py: 2px;
+  --cell-py: 2px; --cell-px: 6px; --card-p: 9px; --section-gap: 10px; --block: 5px;
+}
+
+:root[data-density="cozy"] {
+  --line: 1.65; --gap: 11px; --bar-py: 14px; --btn-py: 8px; --btn-px: 14px; --input-py: 8px;
+  --cell-py: 10px; --cell-px: 11px; --card-p: 20px; --section-gap: 24px; --block: 12px; --target: 36px;
+}
+
+/* Cozy is the setting for fingers: 44px is the smallest comfortable touch target. */
+@media (pointer: coarse) {
+  :root[data-density="cozy"] { --target: 44px; }
+}
+
+:root[data-text="90"] { --text-scale: 0.9; }
+:root[data-text="115"] { --text-scale: 1.15; }
+:root[data-text="130"] { --text-scale: 1.3; }
+
+/* System (no data-theme) follows the device; an explicit Light keeps the base values above. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
+    --bg: #15181d; --panel: #1d2127; --panel-2: #252a31; --border: #323842; --border-strong: #4a5260;
+    --fg: #e6e8eb; --fg-dim: #a4acb8; --accent: #7fb0ff; --hover: #26303d; --selected-border: #7fb0ff;
+    --good: #5cc97a; --warn: #e0b341; --bad: #ff8a80; --never: #9aa2ae;
+    --series-1: #3987e5; --series-2: #d95926; --scrim: rgba(0, 0, 0, 0.6); --shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #15181d; --panel: #1d2127; --panel-2: #252a31; --border: #323842; --border-strong: #4a5260;
+  --fg: #e6e8eb; --fg-dim: #a4acb8; --accent: #7fb0ff; --hover: #26303d; --selected-border: #7fb0ff;
+  --good: #5cc97a; --warn: #e0b341; --bad: #ff8a80; --never: #9aa2ae;
+  --series-1: #3987e5; --series-2: #d95926; --scrim: rgba(0, 0, 0, 0.6); --shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+}
+
+/* True black: an AMOLED screen turns black pixels off. Text is dimmed a step so white does not glare. */
+:root[data-theme="oled"] {
+  color-scheme: dark;
+  --bg: #000000; --panel: #000000; --panel-2: #0a0a0a; --border: #222222; --border-strong: #363636;
+  --fg: #c9c9c9; --fg-dim: #8a8a8a; --accent: #6cb6ff; --hover: #111a24; --selected-border: #6cb6ff;
+  --good: #4fbf6c; --warn: #d4a72c; --bad: #ff7b72; --never: #8a8a8a;
+  --series-1: #3987e5; --series-2: #d95926; --scrim: rgba(0, 0, 0, 0.75); --shadow: 0 0 0 1px #363636;
+}
+
+/* Black on white, every border black, links underlined, a thick focus ring: text and controls clear
+   WCAG's 7:1 enhanced contrast. */
+:root[data-theme="contrast"] {
+  color-scheme: light;
+  --bg: #ffffff; --panel: #ffffff; --panel-2: #ffffff; --border: #000000; --border-strong: #000000;
+  --fg: #000000; --fg-dim: #333333; --accent: #0037a6; --hover: #e6ecff; --selected-border: #000000;
+  --good: #0b5a1d; --warn: #5c3b00; --bad: #8c1d18; --never: #3d3d3d;
+  --series-1: #0037a6; --series-2: #a33000; --scrim: rgba(0, 0, 0, 0.6); --shadow: 0 0 0 2px #000000;
+}
+[data-theme="contrast"] :focus-visible { outline: 3px solid var(--accent) !important; outline-offset: 2px; }
+[data-theme="contrast"] a { text-decoration: underline; }
+/* Inactive controls stay legible: a faded button would fall below 7:1. */
+[data-theme="contrast"] button:disabled,
+[data-theme="contrast"] .palette li[aria-disabled="true"] { opacity: 1; color: #4a4a4a; border-style: dashed; }
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: calc(14px * var(--text-scale));
+  line-height: var(--line);
+  /* Long emails and identifiers break rather than widen the page on a phone at 130%. */
+  overflow-wrap: break-word;
+}
+a { color: var(--accent); }
+h2, p { overflow-wrap: anywhere; }
+.app { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; max-width: 1400px; margin: 0 auto; padding: 0 16px; }
+
+button, select, input {
+  font: inherit;
+  font-size: calc(13px * var(--text-scale));
+  color: inherit;
+}
+button {
+  background: var(--panel-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  padding: var(--btn-py) var(--btn-px);
+  min-height: var(--target);
+  cursor: pointer;
+}
+button:hover:not(:disabled) { background: var(--hover); }
+button:disabled { opacity: 0.55; cursor: default; }
+input, select {
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  padding: var(--input-py) 8px;
+  min-height: var(--target);
+}
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+@media (hover: none) {
+  button, select, input { min-height: max(32px, var(--target)); }
+}
+kbd {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: calc(11px * var(--text-scale));
+  border: 1px solid var(--border-strong);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 0 5px;
+  color: var(--fg-dim);
+  background: var(--panel);
+  white-space: nowrap;
+}
+.muted { color: var(--fg-dim); }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* Header */
+.bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--gap);
+  padding: var(--bar-py) 0;
+}
+.brand { font-size: calc(18px * var(--text-scale)); margin: 0; font-weight: 700; flex: none; }
+/* Takes the free width up to 480px and is the first thing to give it up as the window narrows. */
+.search-box {
+  flex: 1 1 480px;
+  max-width: 480px;
+  min-width: 120px;
+  display: flex;
+  align-items: stretch;
+  position: relative;
+}
+.palette-trigger {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  background: var(--panel);
+  color: var(--fg-dim);
+  border-radius: 6px;
+}
+.palette-trigger .pt-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.palette-trigger.filtered .pt-text { color: var(--fg); }
+.search-box.has-filter .palette-trigger { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.search-clear { border-left-width: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; flex: none; }
+.bar-right { display: flex; align-items: center; gap: var(--gap); margin-left: auto; flex-wrap: wrap; }
+.live { display: inline-flex; align-items: center; gap: 5px; font-size: calc(12px * var(--text-scale)); color: var(--fg-dim); white-space: nowrap; }
+.live .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--never); }
+.live.on .dot { background: var(--good); }
+
+.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); overflow-x: auto; }
+.tabs a {
+  padding: var(--btn-py) var(--btn-px);
+  min-height: var(--target);
+  display: inline-flex; align-items: center; gap: 6px;
+  text-decoration: none;
+  color: var(--fg-dim);
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+  font-size: calc(14px * var(--text-scale));
+}
+.tabs a[aria-current="page"] { color: var(--fg); border-bottom-color: var(--accent); font-weight: 600; }
+.tabs .count { font-size: calc(11px * var(--text-scale)); background: var(--panel-2); border-radius: 9px; padding: 0 6px; color: var(--fg-dim); }
+
+main { padding: var(--section-gap) 0; flex: 1 0 auto; min-width: 0; }
+h2 { font-size: calc(17px * var(--text-scale)); margin: 0 0 var(--block); }
+h3 { font-size: calc(15px * var(--text-scale)); margin: var(--section-gap) 0 var(--block); }
+p { margin: 0 0 var(--block); }
+.toolbar { display: flex; flex-wrap: wrap; gap: var(--gap); align-items: center; margin-bottom: var(--block); }
+.toolbar label { display: inline-flex; align-items: center; gap: 6px; }
+.toolbar input[type="search"] { width: min(280px, 100%); }
+.toolbar input[type="number"] { width: 5.5em; }
+.notice { padding: var(--card-p); background: var(--panel); border: 1px dashed var(--border-strong); border-radius: 8px; color: var(--fg-dim); }
+
+/* Tables scroll inside themselves; the page never scrolls sideways. */
+.table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); max-width: 100%; }
+table { border-collapse: collapse; width: 100%; font-size: calc(13px * var(--text-scale)); }
+th, td { padding: var(--cell-py) var(--cell-px); border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; vertical-align: top; }
+tbody tr:last-child td { border-bottom: 0; }
+th { background: var(--panel-2); font-weight: 600; position: sticky; top: 0; }
+th button { all: unset; cursor: pointer; display: inline-flex; gap: 4px; align-items: center; }
+th button:focus-visible { outline: 2px solid var(--accent); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+td.notes { white-space: normal; min-width: 14em; max-width: 28em; color: var(--fg-dim); }
+tbody tr.clickable { cursor: pointer; }
+tbody tr.clickable:hover { background: var(--hover); }
+tbody tr.selected { background: var(--hover); box-shadow: inset 3px 0 0 var(--selected-border); }
+.login { font-weight: 600; white-space: nowrap; }
+.login.fresh { color: var(--good); }
+.login.aging { color: var(--warn); }
+.login.old { color: var(--bad); }
+.login.never { color: var(--never); font-weight: 400; font-style: italic; }
+.mono { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: calc(12px * var(--text-scale)); }
+.pill { display: inline-block; font-size: calc(11px * var(--text-scale)); border: 1px solid var(--border-strong); border-radius: 9px; padding: 0 7px; color: var(--fg-dim); }
+
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--gap); margin-bottom: var(--section-gap); }
+.tile { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: var(--card-p); }
+.tile .label { font-size: calc(12px * var(--text-scale)); color: var(--fg-dim); }
+.tile .value { font-size: calc(24px * var(--text-scale)); font-weight: 700; font-variant-numeric: tabular-nums; }
+.tile .sub { font-size: calc(12px * var(--text-scale)); color: var(--fg-dim); }
+.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: var(--section-gap); }
+.card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: var(--card-p); min-width: 0; }
+.card h3 { margin-top: 0; }
+.stack > * + * { margin-top: var(--block); }
+.list-plain { list-style: none; margin: 0; padding: 0; }
+.list-plain li { padding: var(--cell-py) 0; border-bottom: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+.list-plain li:last-child { border-bottom: 0; }
+.code-line { display: flex; gap: 6px; align-items: center; margin-top: 4px; width: 100%; }
+.code-line code { flex: 1 1 auto; min-width: 0; overflow-x: auto; white-space: pre; background: var(--panel-2); padding: 3px 6px; border-radius: 4px; font-size: calc(12px * var(--text-scale)); }
+details > summary { cursor: pointer; padding: var(--cell-py) 0; }
+.deck summary { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.deck .cards { columns: 2 14em; font-size: calc(12px * var(--text-scale)); margin: var(--block) 0; padding-left: 0; list-style: none; }
+.deck .cards li { break-inside: avoid; }
+.back { margin-bottom: var(--block); }
+
+/* Charts: thin 2px lines, recessive grid, a crosshair and tooltip on hover. */
+.chart { position: relative; }
+.chart svg { width: 100%; height: auto; display: block; overflow: visible; }
+.chart .grid line { stroke: var(--border); stroke-width: 1; }
+.chart .axis text { fill: var(--fg-dim); font-size: calc(11px * var(--text-scale)); }
+.chart .series path { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.chart .series circle { stroke: var(--panel); stroke-width: 2; }
+.chart .label text { font-size: calc(11px * var(--text-scale)); fill: var(--fg); }
+.chart .cross { stroke: var(--fg-dim); stroke-width: 1; stroke-dasharray: 3 3; }
+.chart .tip {
+  position: absolute; pointer-events: none; background: var(--panel); border: 1px solid var(--border-strong);
+  border-radius: 6px; padding: 6px 8px; font-size: calc(12px * var(--text-scale)); box-shadow: var(--shadow); white-space: nowrap; z-index: 5;
+}
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: calc(12px * var(--text-scale)); color: var(--fg); margin-bottom: 4px; }
+.swatch { display: inline-block; width: 12px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 5px; }
+
+/* Footer: pushed to the foot of the page when the content is short. */
+.build-info {
+  margin-top: auto;
+  padding: 18px 0 10px;
+  font-size: calc(12px * var(--text-scale));
+  line-height: 1.5;
+  color: var(--fg-dim);
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  min-width: 0;
+}
+.changelog-trigger {
+  display: block;
+  width: 100%;
+  margin-top: 0.35rem;
+  padding: 0;
+  min-height: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  /* One line only: the full text lives in the dialog. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.changelog-trigger:hover:not(:disabled), .changelog-trigger:focus-visible { color: var(--fg); background: none; }
+
+/* Dialogs */
+.scrim { position: fixed; inset: 0; background: var(--scrim); display: flex; align-items: flex-start; justify-content: center; padding: 10vh 16px 16px; z-index: 50; }
+.sheet { background: var(--panel); color: var(--fg); border: 1px solid var(--border-strong); border-radius: 10px; box-shadow: var(--shadow); width: min(620px, 100%); padding: var(--card-p); max-height: 80vh; max-height: 80dvh; display: flex; flex-direction: column; }
+.sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: var(--block); }
+.sheet-title { margin: 0; font-size: calc(17px * var(--text-scale)); }
+.changelog-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: calc(13px * var(--text-scale));
+  line-height: 1.6;
+  /* A long changelog scrolls inside the panel rather than growing it. */
+  max-height: 28rem;
+  overflow-y: auto;
+}
+.changelog-list li { margin-bottom: 7px; }
+
+/* Command palette */
+.palette-scrim { padding-top: 12vh; }
+.palette { background: var(--panel); border: 1px solid var(--border-strong); border-radius: 10px; box-shadow: var(--shadow); width: min(640px, 100%); display: flex; flex-direction: column; overflow: hidden; }
+.palette input { border: 0; border-bottom: 1px solid var(--border); border-radius: 0; padding: 12px 14px; font-size: calc(15px * var(--text-scale)); background: var(--panel); width: 100%; }
+.palette input:focus-visible { outline: none; }
+.palette ul { list-style: none; margin: 0; padding: 4px; overflow-y: auto; max-height: min(420px, 60vh); max-height: min(420px, 60dvh); }
+.palette li { display: flex; align-items: center; gap: 10px; padding: var(--btn-py) 10px; border-radius: 6px; cursor: pointer; min-height: max(30px, var(--target)); }
+.palette li.active { background: var(--hover); box-shadow: inset 2px 0 0 var(--selected-border); }
+.palette li[aria-disabled="true"] { opacity: 0.5; cursor: default; }
+.palette .p-group { font-size: calc(11px * var(--text-scale)); color: var(--fg-dim); min-width: 5.5em; flex: none; text-transform: uppercase; letter-spacing: 0.03em; }
+.palette .p-main { flex: 1 1 auto; min-width: 0; }
+.palette .p-label { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.palette .p-snippet { display: block; font-size: calc(12px * var(--text-scale)); color: var(--fg-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.palette .p-empty { color: var(--fg-dim); cursor: default; }
+.palette .p-sep { font-size: calc(11px * var(--text-scale)); color: var(--fg-dim); padding: 6px 10px 2px; cursor: default; min-height: 0; text-transform: uppercase; letter-spacing: 0.03em; }
+@media (pointer: coarse) { .palette li { min-height: max(38px, var(--target)); } }
+@media (max-width: 600px) {
+  .palette-scrim { padding: 8px 8px 0; }
+  .palette { width: 100%; }
+  /* The on-screen keyboard takes half the screen: measure against the visible viewport. */
+  .palette ul { max-height: 45vh; max-height: 45dvh; max-height: calc(var(--vvh, 100dvh) - 110px); }
+}
+
+/* Settings menu */
+.settings { position: relative; }
+.settings-panel {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 40;
+  width: min(340px, calc(100vw - 32px));
+  max-height: calc(100vh - 90px); max-height: calc(100dvh - 90px); overflow-y: auto;
+  background: var(--panel); border: 1px solid var(--border-strong); border-radius: 10px; box-shadow: var(--shadow);
+  padding: var(--card-p);
+}
+.settings-panel fieldset { border: 0; padding: 0; margin: 0 0 var(--section-gap); min-width: 0; }
+.settings-panel legend { font-weight: 600; padding: 0; margin-bottom: 6px; font-size: calc(13px * var(--text-scale)); }
+.choice { display: grid; grid-template-columns: auto 1fr; column-gap: 8px; align-items: start; padding: 4px 0; cursor: pointer; min-height: var(--target); }
+.choice input { margin: 3px 0 0; }
+.choice small { grid-column: 2; color: var(--fg-dim); font-size: calc(12px * var(--text-scale)); }
+.segmented { display: flex; }
+.segmented label { flex: 1 1 0; display: flex; }
+/* The radio stays in the page for keyboard and screen readers; the span is what shows. */
+.segmented input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+.segmented span {
+  flex: 1 1 auto; display: grid; place-items: center; min-height: var(--target);
+  padding: var(--btn-py) 4px; border: 1px solid var(--border-strong); background: var(--panel-2); cursor: pointer;
+  font-size: calc(13px * var(--text-scale));
+}
+.segmented label + label span { border-left-width: 0; }
+.segmented label:first-child span { border-radius: 5px 0 0 5px; }
+.segmented label:last-child span { border-radius: 0 5px 5px 0; }
+.segmented input:checked + span { color: var(--accent); background: var(--hover); border-color: var(--selected-border); font-weight: 600; }
+.segmented input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 1px; }
+.seg-tip { font-size: calc(12px * var(--text-scale)); color: var(--fg-dim); margin-top: 4px; }
+.screen-info { font-size: calc(12px * var(--text-scale)); color: var(--fg-dim); border-top: 1px solid var(--border); padding-top: var(--block); }
+
+@media (max-width: 600px) {
+  .app { padding: 0 12px; }
+  .bar-right .live-time { display: none; }
+  .palette-trigger kbd { display: none; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="bar">
+    <h1 class="brand">MtgaDash</h1>
+    <div class="search-box" id="search-box">
+      <button type="button" class="palette-trigger" id="palette-trigger" aria-haspopup="dialog" title="Search or run a command (Ctrl+K)">
+        <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M11 11l3.5 3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        <span class="pt-text" id="palette-trigger-text">Search or run a command…</span>
+        <kbd>Ctrl K</kbd>
+      </button>
+      <button type="button" class="search-clear" id="search-clear" hidden aria-label="Clear filter" title="Clear filter">✕</button>
+    </div>
+    <div class="bar-right">
+      <span class="live" id="live" title="Live updates"><span class="dot"></span><span id="live-text">connecting</span></span>
+      <span class="live live-time muted" id="updated"></span>
+      <div class="settings" id="settings">
+        <button type="button" id="settings-button" aria-expanded="false" aria-controls="settings-panel">Settings</button>
+      </div>
+    </div>
+  </header>
+  <nav class="tabs" aria-label="Views" id="tabs"></nav>
+  <main id="view" tabindex="-1"></main>
+  <footer class="build-info" id="build-info"><div id="build-line">MtgaDash</div></footer>
+</div>
+
+<script>window.MTGA_CONFIG = /*CONFIG*/null; window.MTGA_DATA = /*DATA*/null;</script>
+
+<!-- Pure helpers: no DOM, no browser APIs. The unit tests run this block in Node. -->
+<script id="pure">
+var MtgaPure = (function () {
+  "use strict";
+
+  /** One changelog entry per line, oldest first; blank lines and \r dropped. */
+  function parseChangelog(text) {
+    return String(text || "").split("\n").map(function (l) { return l.trim(); }).filter(Boolean);
+  }
+
+  /** Every term must occur in group or label; labels starting with the whole query come first. */
+  function filterCommands(commands, query) {
+    var q = String(query || "").trim().toLowerCase();
+    if (!q) return commands.slice();
+    var terms = q.split(/\s+/);
+    var hits = commands.filter(function (c) {
+      var hay = (c.group + " " + c.label).toLowerCase();
+      return terms.every(function (t) { return hay.indexOf(t) >= 0; });
+    });
+    var leading = hits.filter(function (c) { return c.label.toLowerCase().indexOf(q) === 0; });
+    return leading.concat(hits.filter(function (c) { return leading.indexOf(c) < 0; }));
+  }
+
+  /** The searchable text of an account, one field per line. Same fields as Queries.Matches on the server. */
+  function accountText(a) {
+    return [a.email, a.displayName, a.status, a.notes, a.miscNotes].filter(Boolean).join("\n");
+  }
+
+  /** The one account matcher, shared by the table filter and the palette: every term, case-insensitive. */
+  function matchesAccount(a, query) {
+    var terms = String(query || "").toLowerCase().split(/\s+/).filter(Boolean);
+    if (!terms.length) return true;
+    var hay = accountText(a).toLowerCase();
+    return terms.every(function (t) { return hay.indexOf(t) >= 0; });
+  }
+
+  /**
+   * The line holding the first search term, stripped of markdown markers and cut to about `width`
+   * characters around the match, with an ellipsis on each cut side.
+   */
+  function snippet(text, query, width) {
+    width = width || 80;
+    var term = String(query || "").trim().toLowerCase().split(/\s+/)[0] || "";
+    var lines = String(text || "").split(/\r?\n/);
+    var line = lines[0] || "";
+    if (term) {
+      for (var i = 0; i < lines.length; i++) {
+        if (lines[i].toLowerCase().indexOf(term) >= 0) { line = lines[i]; break; }
+      }
+    }
+    line = line.replace(/^\s*(#{1,6}\s+|>\s*|[-*+]\s+|\d+[.)]\s+)+/, "").replace(/[*_`]+/g, "").trim();
+    if (line.length <= width) return line;
+    var at = term ? line.toLowerCase().indexOf(term) : 0;
+    if (at < 0) at = 0;
+    var start = Math.max(0, Math.min(at - Math.floor((width - term.length) / 2), line.length - width));
+    var end = Math.min(line.length, start + width);
+    return (start > 0 ? "…" : "") + line.slice(start, end).trim() + (end < line.length ? "…" : "");
+  }
+
+  /** "3d ago"; null for never. */
+  function relativeTime(iso, nowMs) {
+    if (!iso) return null;
+    var t = Date.parse(iso);
+    if (isNaN(t)) return null;
+    var s = Math.max(0, Math.round((nowMs - t) / 1000));
+    if (s < 60) return "just now";
+    var m = Math.round(s / 60); if (m < 60) return m + "m ago";
+    var h = Math.round(m / 60); if (h < 48) return h + "h ago";
+    var d = Math.round(h / 24); if (d < 60) return d + "d ago";
+    var mo = Math.round(d / 30.4); if (mo < 24) return mo + "mo ago";
+    return Math.round(d / 365) + "y ago";
+  }
+
+  /** fresh ≤7d, aging ≤staleDays, old beyond, never. */
+  function loginClass(iso, nowMs, staleDays) {
+    if (!iso || isNaN(Date.parse(iso))) return "never";
+    var days = (nowMs - Date.parse(iso)) / 86400000;
+    return days <= 7 ? "fresh" : days <= staleDays ? "aging" : "old";
+  }
+
+  function isStale(iso, nowMs, days) {
+    return !iso || isNaN(Date.parse(iso)) || (nowMs - Date.parse(iso)) / 86400000 > days;
+  }
+
+  return {
+    parseChangelog: parseChangelog, filterCommands: filterCommands, accountText: accountText,
+    matchesAccount: matchesAccount, snippet: snippet, relativeTime: relativeTime, loginClass: loginClass, isStale: isStale,
+  };
+})();
+if (typeof module !== "undefined") module.exports = MtgaPure;
+</script>
+
+<script>
+(function () {
+  "use strict";
+  var P = MtgaPure;
+  var CFG = window.MTGA_CONFIG || {
+    appName: "MtgaDash", version: "0.0.0", buildTime: "", staleDays: 30, readOnly: false, changelog: null,
+    keys: { theme: "mtgadash:theme", density: "mtgadash:density", text: "mtgadash:text-size" },
+    themes: [{ id: "system", label: "System", tip: "" }], densities: [{ id: "normal", label: "Normal", tip: "" }],
+    textSizes: [{ id: "100", label: "100%", tip: "" }],
+  };
+  var EMBEDDED = window.MTGA_DATA;
+  var READ_ONLY = !!EMBEDDED;
+
+  var state = {
+    route: { view: "accounts" },
+    filter: "",
+    status: "",
+    sort: { key: "email", dir: 1 },
+    staleDays: CFG.staleDays || 30,
+    selectedEmail: null,
+    data: { accounts: [], totals: null, review: null, statuses: [] },
+    loaded: false,
+    detail: null,
+    updatedAt: null,
+    changelog: [],
+  };
+
+  // ---------- DOM helpers: text only, never innerHTML, so log or CSV data cannot inject markup ----------
+
+  function h(tag, attrs) {
+    var el = document.createElement(tag);
+    if (attrs) {
+      for (var k in attrs) {
+        var v = attrs[k];
+        if (v == null || v === false) continue;
+        if (k === "class") el.className = v;
+        else if (k === "text") el.textContent = v;
+        else if (k.slice(0, 2) === "on") el.addEventListener(k.slice(2), v);
+        else if (k === "dataset") for (var d in v) el.dataset[d] = v[d];
+        else el.setAttribute(k, v === true ? "" : v);
+      }
+    }
+    for (var i = 2; i < arguments.length; i++) append(el, arguments[i]);
+    return el;
+  }
+  function append(el, child) {
+    if (child == null || child === false) return;
+    if (Array.isArray(child)) { child.forEach(function (c) { append(el, c); }); return; }
+    el.appendChild(typeof child === "object" ? child : document.createTextNode(String(child)));
+  }
+  var SVGNS = "http://www.w3.org/2000/svg";
+  function s(tag, attrs) {
+    var el = document.createElementNS(SVGNS, tag);
+    for (var k in attrs || {}) if (attrs[k] != null) el.setAttribute(k, attrs[k]);
+    for (var i = 2; i < arguments.length; i++) append(el, arguments[i]);
+    return el;
+  }
+  function fmt(n) { return n == null ? "—" : Number(n).toLocaleString("en-US"); }
+  function localTime(iso) { return iso ? new Date(iso).toLocaleString() : "never"; }
+
+  var storage = {
+    get: function (k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } },
+    set: function (k, v) {
+      try { if (v == null) window.localStorage.removeItem(k); else window.localStorage.setItem(k, v); } catch (e) { /* the choice lasts for this tab */ }
+    },
+  };
+
+  function copyText(text, button) {
+    function done() {
+      if (!button) return;
+      var old = button.textContent;
+      button.textContent = "Copied";
+      setTimeout(function () { button.textContent = old; }, 1200);
+    }
+    // The clipboard API needs a secure context; over plain-HTTP LAN access fall back to execCommand.
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(done, function () { legacyCopy(text); done(); });
+    } else { legacyCopy(text); done(); }
+  }
+  function legacyCopy(text) {
+    var ta = h("textarea", { style: "position:fixed;opacity:0;top:0;left:0" });
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand("copy"); } catch (e) { /* nothing more to try */ }
+    ta.remove();
+  }
+
+  // ---------- Data ----------
+
+  function api(path) {
+    return fetch(path, { headers: { Accept: "application/json" } }).then(function (r) {
+      if (!r.ok) throw new Error(path + " → " + r.status);
+      return r.json();
+    });
+  }
+
+  function load() {
+    if (READ_ONLY) {
+      state.data = { accounts: EMBEDDED.accounts || [], totals: EMBEDDED.totals, review: EMBEDDED.review, statuses: EMBEDDED.statuses || [] };
+      state.loaded = true;
+      state.updatedAt = EMBEDDED.generatedAtUtc;
+      render();
+      return Promise.resolve();
+    }
+    return Promise.all([api("/api/accounts"), api("/api/totals"), api("/api/review"), api("/api/statuses")]).then(function (r) {
+      state.data = { accounts: r[0], totals: r[1], review: r[2], statuses: r[3] };
+      state.loaded = true;
+      state.updatedAt = new Date().toISOString();
+      if (state.route.view === "account") return loadDetail(state.route.email);
+    }).then(render, function (err) {
+      state.loadError = String(err && err.message || err);
+      render();
+    });
+  }
+
+  function loadDetail(email) {
+    if (READ_ONLY) {
+      state.detail = (EMBEDDED.details || {})[email] || null;
+      return Promise.resolve();
+    }
+    return api("/api/accounts/" + encodeURIComponent(email)).then(function (d) { state.detail = d; }, function () { state.detail = null; });
+  }
+
+  function connectLive() {
+    var live = document.getElementById("live");
+    var text = document.getElementById("live-text");
+    if (READ_ONLY || !window.EventSource) {
+      text.textContent = READ_ONLY ? "snapshot" : "no live updates";
+      return;
+    }
+    var es = new EventSource("/api/events");
+    es.addEventListener("open", function () { live.classList.add("on"); text.textContent = "live"; });
+    es.addEventListener("error", function () { live.classList.remove("on"); text.textContent = "reconnecting"; });
+    es.addEventListener("changed", function () { load(); });
+  }
+
+  // ---------- Routing ----------
+
+  function parseRoute() {
+    var hsh = location.hash.replace(/^#\/?/, "");
+    if (hsh.indexOf("account/") === 0) return { view: "account", email: decodeURIComponent(hsh.slice(8)) };
+    return { view: ["accounts", "stale", "totals", "review"].indexOf(hsh) >= 0 ? hsh : "accounts" };
+  }
+  function go(view, email) {
+    var target = view === "account" ? "#/account/" + encodeURIComponent(email) : "#/" + view;
+    if (location.hash === target) onRoute(); else location.hash = target;
+  }
+  function onRoute() {
+    state.route = parseRoute();
+    if (state.route.view === "account") {
+      state.selectedEmail = state.route.email;
+      state.detail = undefined;
+      render();
+      loadDetail(state.route.email).then(render);
+    } else {
+      render();
+    }
+  }
+
+  // ---------- Views ----------
+
+  var VIEWS = [
+    { id: "accounts", label: "Accounts", key: "1" },
+    { id: "stale", label: "Stale", key: "2" },
+    { id: "totals", label: "Totals", key: "3" },
+    { id: "review", label: "Review", key: "4" },
+  ];
+
+  function filteredAccounts() {
+    return state.data.accounts.filter(function (a) {
+      return P.matchesAccount(a, state.filter) && (!state.status || (a.status || "") === state.status);
+    });
+  }
+  function staleAccounts() {
+    var now = Date.now();
+    return state.data.accounts.filter(function (a) { return P.isStale(a.lastLoginUtc, now, state.staleDays); })
+      .sort(function (a, b) { return (a.lastLoginUtc || "").localeCompare(b.lastLoginUtc || "") || a.email.localeCompare(b.email); });
+  }
+  function reviewCount() {
+    var r = state.data.review;
+    return r ? r.unmatched.length + r.ambiguous.length + r.statusMismatches.length : 0;
+  }
+
+  function render() {
+    renderTabs();
+    renderSearchBox();
+    var upd = document.getElementById("updated");
+    upd.textContent = state.updatedAt ? "updated " + new Date(state.updatedAt).toLocaleTimeString() : "";
+    var view = document.getElementById("view");
+    var scrollY = window.scrollY;
+    var focusedId = document.activeElement && document.activeElement.id;
+    var focusedSel = document.activeElement && document.activeElement.selectionStart;
+    view.replaceChildren();
+    if (state.loadError && !state.loaded) {
+      view.appendChild(h("p", { class: "notice", text: "Could not load data: " + state.loadError }));
+      return;
+    }
+    if (!state.loaded) { view.appendChild(h("p", { class: "muted", text: "Loading…" })); return; }
+    var r = state.route.view;
+    if (r === "accounts") renderAccounts(view);
+    else if (r === "stale") renderStale(view);
+    else if (r === "totals") renderTotals(view);
+    else if (r === "review") renderReview(view);
+    else if (r === "account") renderDetail(view);
+    // Re-rendering on a live update must not steal the caret from a filter box or jump the page.
+    if (focusedId) {
+      var el = document.getElementById(focusedId);
+      if (el && el !== document.activeElement && view.contains(el)) {
+        el.focus();
+        if (focusedSel != null && el.setSelectionRange) try { el.setSelectionRange(focusedSel, focusedSel); } catch (e) { /* not a text field */ }
+      }
+    }
+    window.scrollTo(0, scrollY);
+  }
+
+  function renderTabs() {
+    var nav = document.getElementById("tabs");
+    nav.replaceChildren();
+    var counts = { accounts: state.data.accounts.length, stale: staleAccounts().length, review: reviewCount() };
+    VIEWS.forEach(function (v) {
+      var current = state.route.view === v.id || (v.id === "accounts" && state.route.view === "account");
+      nav.appendChild(h("a", { href: "#/" + v.id, "aria-current": current ? "page" : null, title: v.label + " (" + v.key + ")" },
+        v.label, counts[v.id] != null && state.loaded ? h("span", { class: "count", text: fmt(counts[v.id]) }) : null));
+    });
+  }
+
+  function renderSearchBox() {
+    var box = document.getElementById("search-box");
+    var text = document.getElementById("palette-trigger-text");
+    var trigger = document.getElementById("palette-trigger");
+    var clear = document.getElementById("search-clear");
+    var active = !!state.filter;
+    box.classList.toggle("has-filter", active);
+    trigger.classList.toggle("filtered", active);
+    text.textContent = active ? state.filter : "Search or run a command…";
+    clear.hidden = !active;
+  }
+
+  function setFilter(q) {
+    state.filter = q;
+    render();
+  }
+
+  function loginCell(a) {
+    var now = Date.now();
+    var cls = P.loginClass(a.lastLoginUtc, now, state.staleDays);
+    return h("span", { class: "login " + cls, title: localTime(a.lastLoginUtc) }, P.relativeTime(a.lastLoginUtc, now) || "never");
+  }
+
+  var COLUMNS = [
+    { key: "email", label: "Email" },
+    { key: "displayName", label: "Display name" },
+    { key: "status", label: "Status" },
+    { key: "lastLoginUtc", label: "Last login" },
+    { key: "gems", label: "Gems", num: true },
+    { key: "gold", label: "Gold", num: true },
+    { key: "wcCommon", label: "C", num: true, title: "Common wildcards" },
+    { key: "wcUncommon", label: "U", num: true, title: "Uncommon wildcards" },
+    { key: "wcRare", label: "R", num: true, title: "Rare wildcards" },
+    { key: "wcMythic", label: "M", num: true, title: "Mythic wildcards" },
+    { key: "boosterTotal", label: "Boosters", num: true },
+    { key: "customDeckCount", label: "Decks", num: true, title: "Custom (non-precon) decks" },
+    { key: "notes", label: "Notes" },
+  ];
+
+  function sortRows(rows) {
+    var k = state.sort.key, dir = state.sort.dir;
+    return rows.slice().sort(function (a, b) {
+      var x = a[k], y = b[k];
+      // Missing values sort last in either direction.
+      if (x == null && y == null) return a.email.localeCompare(b.email);
+      if (x == null) return 1;
+      if (y == null) return -1;
+      var c = typeof x === "number" ? x - y : String(x).localeCompare(String(y), undefined, { sensitivity: "base" });
+      return c * dir || a.email.localeCompare(b.email);
+    });
+  }
+
+  function setSort(key) {
+    if (state.sort.key === key) state.sort.dir = -state.sort.dir;
+    else state.sort = { key: key, dir: key === "email" || key === "displayName" || key === "status" || key === "notes" ? 1 : -1 };
+    render();
+  }
+
+  function renderAccounts(view) {
+    var rows = sortRows(filteredAccounts());
+    var statusSelect = h("select", { id: "status-filter", "aria-label": "Status", onchange: function (e) { state.status = e.target.value; render(); } },
+      h("option", { value: "", text: "All statuses" }),
+      state.data.statuses.map(function (st) { return h("option", { value: st, text: st, selected: st === state.status }); }));
+    var search = h("input", {
+      type: "search", id: "table-filter", placeholder: "Filter accounts…", "aria-label": "Filter accounts", value: state.filter,
+      oninput: function (e) { setFilter(e.target.value); },
+    });
+    view.appendChild(h("div", { class: "toolbar" },
+      search, statusSelect,
+      h("span", { class: "muted", text: fmt(rows.length) + " of " + fmt(state.data.accounts.length) + " accounts" }),
+      READ_ONLY ? null : h("button", { type: "button", onclick: reimport, text: "Re-import CSV" })));
+
+    if (!state.data.accounts.length) {
+      view.appendChild(h("p", { class: "notice", text: "No accounts yet. Put the accounts CSV at the AccountsCsvPath setting and choose Re-import CSV." }));
+      return;
+    }
+
+    var head = h("tr", null, COLUMNS.map(function (c) {
+      var sorted = state.sort.key === c.key;
+      return h("th", { class: c.num ? "num" : null, scope: "col", "aria-sort": sorted ? (state.sort.dir > 0 ? "ascending" : "descending") : null },
+        h("button", { type: "button", title: c.title || ("Sort by " + c.label), onclick: function () { setSort(c.key); } },
+          c.label, sorted ? (state.sort.dir > 0 ? "▲" : "▼") : null));
+    }));
+    var body = h("tbody");
+    rows.forEach(function (a) {
+      var open = function () { go("account", a.email); };
+      body.appendChild(h("tr", {
+        class: "clickable" + (a.email === state.selectedEmail ? " selected" : ""), tabindex: "0", dataset: { email: a.email },
+        onclick: open, onkeydown: function (e) { if (e.key === "Enter") open(); },
+      },
+        h("td", { class: "mono", text: a.email }),
+        h("td", null, a.displayName || h("span", { class: "muted", text: a.matchState === "Ambiguous" ? "ambiguous" : "—" })),
+        h("td", { text: a.status || "" }),
+        h("td", null, loginCell(a)),
+        h("td", { class: "num", text: fmt(a.gems) }),
+        h("td", { class: "num", text: fmt(a.gold) }),
+        h("td", { class: "num", text: fmt(a.wcCommon) }),
+        h("td", { class: "num", text: fmt(a.wcUncommon) }),
+        h("td", { class: "num", text: fmt(a.wcRare) }),
+        h("td", { class: "num", text: fmt(a.wcMythic) }),
+        h("td", { class: "num", text: a.snapshotId == null ? "—" : fmt(a.boosterTotal) }),
+        h("td", { class: "num", text: a.displayName ? fmt(a.customDeckCount) : "—" }),
+        h("td", { class: "notes", text: [a.notes, a.miscNotes].filter(Boolean).join(" · ") })));
+    });
+    view.appendChild(h("div", { class: "table-wrap" }, h("table", null, h("thead", null, head), body)));
+    if (state.selectedEmail) {
+      var sel = body.querySelector("tr.selected");
+      if (sel && !state.didScrollSelected) { state.didScrollSelected = true; requestAnimationFrame(function () { sel.scrollIntoView({ block: "nearest" }); }); }
+    }
+  }
+
+  function renderStale(view) {
+    var rows = staleAccounts();
+    view.appendChild(h("div", { class: "toolbar" },
+      h("label", null, "Not logged in for more than",
+        h("input", {
+          type: "number", id: "stale-days", min: "0", max: "3650", value: String(state.staleDays), "aria-label": "Days",
+          onchange: function (e) { var n = parseInt(e.target.value, 10); if (n >= 0) { state.staleDays = n; render(); } },
+        }), "days"),
+      h("span", { class: "muted", text: fmt(rows.length) + " accounts, oldest first" }),
+      h("button", { type: "button", disabled: !rows.length, onclick: function (e) { copyText(rows.map(function (a) { return a.email; }).join("\n"), e.currentTarget); }, text: "Copy all emails" })));
+    if (!rows.length) { view.appendChild(h("p", { class: "notice", text: "Every account has logged in within " + state.staleDays + " days." })); return; }
+    var body = h("tbody");
+    rows.forEach(function (a) {
+      body.appendChild(h("tr", null,
+        h("td", null, h("button", { type: "button", title: "Copy " + a.email, onclick: function (e) { e.stopPropagation(); copyText(a.email, e.currentTarget); }, text: "Copy" })),
+        h("td", { class: "mono" }, h("a", { href: "#/account/" + encodeURIComponent(a.email), text: a.email })),
+        h("td", { text: a.displayName || "—" }),
+        h("td", null, loginCell(a)),
+        h("td", { text: a.status || "" }),
+        h("td", { class: "notes", text: a.notes || "" })));
+    });
+    view.appendChild(h("div", { class: "table-wrap" }, h("table", null,
+      h("thead", null, h("tr", null, ["", "Email", "Display name", "Last login", "Status", "Notes"].map(function (t) { return h("th", { scope: "col", text: t }); }))),
+      body)));
+  }
+
+  function tile(label, value, sub) {
+    return h("div", { class: "tile" }, h("div", { class: "label", text: label }), h("div", { class: "value", text: value }), sub ? h("div", { class: "sub", text: sub }) : null);
+  }
+
+  function renderTotals(view) {
+    var t = state.data.totals;
+    if (!t) { view.appendChild(h("p", { class: "muted", text: "No totals yet." })); return; }
+    view.appendChild(h("div", { class: "tiles" },
+      tile("Gems", fmt(t.gems)),
+      tile("Gold", fmt(t.gold)),
+      tile("Rare wildcards", fmt(t.wcRare)),
+      tile("Mythic wildcards", fmt(t.wcMythic)),
+      tile("Uncommon / common", fmt(t.wcUncommon) + " / " + fmt(t.wcCommon)),
+      tile("Display names seen", fmt(t.players), fmt(t.accounts) + " accounts in the CSV")));
+    var sets = h("tbody");
+    t.boostersBySet.forEach(function (b) {
+      sets.appendChild(h("tr", null, h("td", { text: b.setCode }), h("td", { class: "num", text: fmt(b.count) }), h("td", { class: "num", text: fmt(b.accounts) })));
+    });
+    var buckets = h("tbody");
+    Object.keys(t.loginBuckets).forEach(function (k) {
+      buckets.appendChild(h("tr", null, h("td", { text: k === "never" ? "Never" : k === "older" ? "Older than 90 days" : "Within " + k.slice(1) }), h("td", { class: "num", text: fmt(t.loginBuckets[k]) })));
+    });
+    view.appendChild(h("div", { class: "grid-2" },
+      h("section", { class: "card" }, h("h3", { text: "Boosters by set" }),
+        t.boostersBySet.length
+          ? h("div", { class: "table-wrap" }, h("table", null, h("thead", null, h("tr", null, h("th", { text: "Set" }), h("th", { class: "num", text: "Boosters" }), h("th", { class: "num", text: "Accounts" }))), sets))
+          : h("p", { class: "muted", text: "No boosters recorded." })),
+      h("section", { class: "card" }, h("h3", { text: "Last login" }),
+        h("div", { class: "table-wrap" }, h("table", null, h("thead", null, h("tr", null, h("th", { text: "When" }), h("th", { class: "num", text: "Accounts" }))), buckets)))));
+  }
+
+  function codeLine(text) {
+    return h("div", { class: "code-line" }, h("code", { text: text }),
+      h("button", { type: "button", onclick: function (e) { copyText(text, e.currentTarget); }, text: "Copy" }));
+  }
+
+  function renderReview(view) {
+    var r = state.data.review;
+    if (!r) { view.appendChild(h("p", { class: "muted", text: "Nothing to review." })); return; }
+    view.appendChild(h("p", { class: "muted", text: "Paste a line into AccountExceptions.DisplayNameToEmail (src/MtgaDash/Accounts/AccountExceptions.cs), rebuild and restart." }));
+
+    view.appendChild(h("h3", { text: "Unmatched display names (" + r.unmatched.length + ")" }));
+    view.appendChild(r.unmatched.length ? h("ul", { class: "list-plain card" }, r.unmatched.map(function (u) {
+      return h("li", null, h("strong", { text: u.displayName }), h("span", { class: "muted", text: "last login " + (P.relativeTime(u.lastLoginUtc, Date.now()) || "never") }), codeLine(u.exceptionLine));
+    })) : h("p", { class: "muted", text: "Every display name is matched." }));
+
+    view.appendChild(h("h3", { text: "Ambiguous aliases (" + r.ambiguous.length + ")" }));
+    view.appendChild(r.ambiguous.length ? h("ul", { class: "list-plain card" }, r.ambiguous.map(function (a) {
+      return h("li", null, h("strong", { text: a.displayName }), h("span", { class: "muted", text: a.candidates.length + " candidates" }),
+        a.exceptionLines.map(codeLine));
+    })) : h("p", { class: "muted", text: "No alias is shared by two accounts." }));
+
+    view.appendChild(h("h3", { text: "Marked unused, but has decks or rare wildcards (" + r.statusMismatches.length + ")" }));
+    view.appendChild(r.statusMismatches.length ? h("div", { class: "table-wrap" }, h("table", null,
+      h("thead", null, h("tr", null, ["Email", "Display name", "Status", "Decks", "R", "M"].map(function (t, i) { return h("th", { class: i >= 3 ? "num" : null, text: t }); }))),
+      h("tbody", null, r.statusMismatches.map(function (m) {
+        return h("tr", { class: "clickable", tabindex: "0", onclick: function () { go("account", m.email); }, onkeydown: function (e) { if (e.key === "Enter") go("account", m.email); } },
+          h("td", { class: "mono", text: m.email }), h("td", { text: m.displayName || "—" }), h("td", { text: m.status || "" }),
+          h("td", { class: "num", text: fmt(m.customDeckCount) }), h("td", { class: "num", text: fmt(m.wcRare) }), h("td", { class: "num", text: fmt(m.wcMythic) }));
+      })))) : h("p", { class: "muted", text: "No account marked unused has decks or rare wildcards." }));
+  }
+
+  // Two measures of different scale get two charts, never two y-axes.
+  function lineChart(title, points, series) {
+    var wrap = h("div", { class: "chart" });
+    wrap.appendChild(h("div", { class: "legend" }, series.map(function (sr) {
+      return h("span", null, h("span", { class: "swatch", style: "background:var(" + sr.color + ")" }), sr.label);
+    })));
+    if (!points.length) { wrap.appendChild(h("p", { class: "muted", text: "No snapshots yet." })); return wrap; }
+    var W = 560, H = 190, L = 48, R = 62, T = 8, B = 24;
+    var times = points.map(function (p) { return Date.parse(p.capturedAtUtc); });
+    var t0 = times[0], t1 = times[times.length - 1];
+    var max = 0;
+    series.forEach(function (sr) { points.forEach(function (p) { if (p[sr.key] != null) max = Math.max(max, p[sr.key]); }); });
+    max = niceMax(max);
+    var x = function (t) { return t1 === t0 ? L + (W - L - R) / 2 : L + (t - t0) / (t1 - t0) * (W - L - R); };
+    var y = function (v) { return T + (1 - v / max) * (H - T - B); };
+    var svg = s("svg", { viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": title });
+    var grid = s("g", { class: "grid" }), axis = s("g", { class: "axis" });
+    [0, 0.5, 1].forEach(function (f) {
+      var v = max * f;
+      grid.appendChild(s("line", { x1: L, x2: W - R, y1: y(v), y2: y(v) }));
+      axis.appendChild(s("text", { x: L - 6, y: y(v) + 4, "text-anchor": "end" }, compact(v)));
+    });
+    axis.appendChild(s("text", { x: L, y: H - 6 }, new Date(t0).toLocaleDateString()));
+    if (t1 !== t0) axis.appendChild(s("text", { x: W - R, y: H - 6, "text-anchor": "end" }, new Date(t1).toLocaleDateString()));
+    svg.appendChild(grid); svg.appendChild(axis);
+    var labels = s("g", { class: "label" });
+    series.forEach(function (sr) {
+      var g = s("g", { class: "series" });
+      var d = "", last = null;
+      points.forEach(function (p, i) {
+        if (p[sr.key] == null) return;
+        d += (d ? "L" : "M") + x(times[i]).toFixed(1) + " " + y(p[sr.key]).toFixed(1);
+        last = { x: x(times[i]), y: y(p[sr.key]), v: p[sr.key] };
+      });
+      if (points.length > 1) g.appendChild(s("path", { d: d, stroke: "var(" + sr.color + ")" }));
+      else if (last) g.appendChild(s("circle", { cx: last.x, cy: last.y, r: 4, fill: "var(" + sr.color + ")" }));
+      svg.appendChild(g);
+      // A direct label at the line's end, so identity is never color alone.
+      if (last) labels.appendChild(s("text", { x: last.x + 6, y: last.y + 4 }, sr.label + " " + compact(last.v)));
+    });
+    svg.appendChild(labels);
+    var cross = s("line", { class: "cross", y1: T, y2: H - B, visibility: "hidden" });
+    svg.appendChild(cross);
+    var tip = h("div", { class: "tip", hidden: true });
+    // The hit target is the whole plot, not the 2px line.
+    svg.appendChild(s("rect", { x: L, y: T, width: W - L - R, height: H - T - B, fill: "transparent" }));
+    svg.addEventListener("pointermove", function (e) {
+      var box = svg.getBoundingClientRect();
+      var px = (e.clientX - box.left) / box.width * W;
+      var best = 0;
+      for (var i = 1; i < times.length; i++) if (Math.abs(x(times[i]) - px) < Math.abs(x(times[best]) - px)) best = i;
+      var cx = x(times[best]);
+      cross.setAttribute("x1", cx); cross.setAttribute("x2", cx); cross.setAttribute("visibility", "visible");
+      tip.replaceChildren();
+      append(tip, [h("div", { class: "muted", text: new Date(times[best]).toLocaleString() }),
+        series.map(function (sr) { return h("div", null, h("span", { class: "swatch", style: "background:var(" + sr.color + ")" }), sr.label + ": " + fmt(points[best][sr.key])); })]);
+      tip.hidden = false;
+      var left = cx / W * box.width;
+      tip.style.left = Math.min(Math.max(0, left + 10), box.width - 150) + "px";
+      tip.style.top = "24px";
+    });
+    svg.addEventListener("pointerleave", function () { cross.setAttribute("visibility", "hidden"); tip.hidden = true; });
+    wrap.appendChild(svg);
+    wrap.appendChild(tip);
+    // The same numbers as a table, for screen readers and exact values.
+    wrap.appendChild(h("details", null, h("summary", { class: "muted", text: "Show as table" }),
+      h("div", { class: "table-wrap" }, h("table", null,
+        h("thead", null, h("tr", null, h("th", { text: "Captured" }), series.map(function (sr) { return h("th", { class: "num", text: sr.label }); }))),
+        h("tbody", null, points.slice().reverse().map(function (p) {
+          return h("tr", null, h("td", { text: localTime(p.capturedAtUtc) }), series.map(function (sr) { return h("td", { class: "num", text: fmt(p[sr.key]) }); }));
+        }))))));
+    return wrap;
+  }
+  function niceMax(v) {
+    if (v <= 0) return 1;
+    var p = Math.pow(10, Math.floor(Math.log10(v)));
+    var steps = [1, 2, 2.5, 5, 10];
+    for (var i = 0; i < steps.length; i++) if (steps[i] * p >= v) return steps[i] * p;
+    return 10 * p;
+  }
+  function compact(v) { return v >= 10000 ? Math.round(v / 1000) + "k" : v >= 1000 ? (v / 1000).toFixed(1).replace(/\.0$/, "") + "k" : String(Math.round(v)); }
+
+  function cardsOf(deck) {
+    if (!deck.cardsJson) return null;
+    try { return JSON.parse(deck.cardsJson); } catch (e) { return null; }
+  }
+
+  function renderDetail(view) {
+    view.appendChild(h("button", { type: "button", class: "back", onclick: function () { go("accounts"); }, title: "Back to accounts (Esc)", text: "← Accounts" }));
+    var d = state.detail;
+    if (d === undefined) { view.appendChild(h("p", { class: "muted", text: "Loading…" })); return; }
+    if (!d) { view.appendChild(h("p", { class: "notice", text: "No account " + state.route.email + "." })); return; }
+    var a = d.account;
+    view.appendChild(h("h2", null, a.email, " ", h("button", { type: "button", onclick: function (e) { copyText(a.email, e.currentTarget); }, text: "Copy" })));
+    view.appendChild(h("p", { class: "muted" },
+      (a.displayName || "no display name") + " · " + (a.status || "no status") + " · ",
+      h("span", { class: "pill", text: a.matchState }), " · last login ", loginCell(a)));
+    if (a.notes || a.miscNotes) view.appendChild(h("p", { text: [a.notes, a.miscNotes].filter(Boolean).join(" · ") }));
+
+    view.appendChild(h("div", { class: "tiles" },
+      tile("Gems", fmt(a.gems)), tile("Gold", fmt(a.gold)),
+      tile("Wildcards C / U", fmt(a.wcCommon) + " / " + fmt(a.wcUncommon)),
+      tile("Wildcards R / M", fmt(a.wcRare) + " / " + fmt(a.wcMythic)),
+      tile("Vault", a.vaultProgress == null ? "—" : a.vaultProgress.toFixed(1) + "%"),
+      tile("Rank", a.constructedClass ? a.constructedClass + " " + (a.constructedLevel || "") : "—",
+        a.limitedClass ? "Limited " + a.limitedClass + " " + (a.limitedLevel || "") : (a.season ? "Season " + a.season : null))));
+
+    view.appendChild(h("div", { class: "grid-2" },
+      h("section", { class: "card" }, h("h3", { text: "Gems and gold" }),
+        lineChart("Gems and gold over time", d.snapshots, [{ key: "gems", label: "Gems", color: "--series-1" }, { key: "gold", label: "Gold", color: "--series-2" }])),
+      h("section", { class: "card" }, h("h3", { text: "Rare and mythic wildcards" }),
+        lineChart("Rare and mythic wildcards over time", d.snapshots, [{ key: "wcRare", label: "Rare", color: "--series-1" }, { key: "wcMythic", label: "Mythic", color: "--series-2" }]))));
+
+    var boosters = d.boosters.length
+      ? h("div", { class: "table-wrap" }, h("table", null, h("thead", null, h("tr", null, h("th", { text: "Set" }), h("th", { class: "num", text: "Count" }))),
+        h("tbody", null, d.boosters.map(function (b) { return h("tr", null, h("td", { text: b.setCode }), h("td", { class: "num", text: fmt(b.count) })); }))))
+      : h("p", { class: "muted", text: "No boosters in the latest snapshot." });
+    var ranks = d.ranks.length
+      ? h("div", { class: "table-wrap" }, h("table", null, h("thead", null, h("tr", null, ["Captured", "Season", "Constructed", "Limited"].map(function (t) { return h("th", { text: t }); }))),
+        h("tbody", null, d.ranks.slice(0, 10).map(function (r) {
+          return h("tr", null, h("td", { text: localTime(r.capturedAtUtc) }), h("td", { text: r.season == null ? "—" : String(r.season) }),
+            h("td", { text: r.constructedClass ? r.constructedClass + " " + (r.constructedLevel || "") : "—" }),
+            h("td", { text: r.limitedClass ? r.limitedClass + " " + (r.limitedLevel || "") : "—" }));
+        }))))
+      : h("p", { class: "muted", text: "No rank recorded." });
+    view.appendChild(h("div", { class: "grid-2" },
+      h("section", { class: "card" }, h("h3", { text: "Boosters" }), boosters),
+      h("section", { class: "card" }, h("h3", { text: "Rank" }), ranks)));
+
+    var decks = h("section", { class: "card" }, h("h3", { text: "Custom decks (" + d.customDecks.length + ")" }));
+    if (!d.customDecks.length) decks.appendChild(h("p", { class: "muted", text: "No custom decks." }));
+    d.customDecks.forEach(function (deck) {
+      var cards = cardsOf(deck);
+      var body = h("div");
+      if (!cards) body.appendChild(h("p", { class: "muted", text: "Card list not seen yet: it is logged when the deck is saved in the client." }));
+      else ["MainDeck", "Sideboard", "CommandZone", "Companions"].forEach(function (zone) {
+        var list = cards[zone] || [];
+        if (!list.length) return;
+        var total = list.reduce(function (n, c) { return n + c.Quantity; }, 0);
+        body.appendChild(h("div", { class: "muted", text: zone.replace(/([a-z])([A-Z])/g, "$1 $2") + " (" + total + ")" }));
+        body.appendChild(h("ul", { class: "cards mono" }, list.map(function (c) {
+          var name = d.cardNames && d.cardNames[c.CardId];
+          return h("li", { text: c.Quantity + " " + c.CardId + (name ? " " + name : "") });
+        })));
+      });
+      decks.appendChild(h("details", { class: "deck" },
+        h("summary", null, h("strong", { text: deck.name }), h("span", { class: "pill", text: deck.format || "no format" }),
+          h("span", { class: "muted", text: "last played " + (P.relativeTime(deck.lastPlayed, Date.now()) || "never") })),
+        body));
+    });
+    if (d.preconCount) decks.appendChild(h("details", null, h("summary", { class: "muted", text: d.preconCount + " precon decks (hidden)" }),
+      h("p", { class: "muted", text: "Precons are the starter decks every account gets; they are counted but not listed." })));
+    view.appendChild(h("h3", { text: "Decks" }));
+    view.appendChild(decks);
+  }
+
+  // ---------- Actions ----------
+
+  function reimport() {
+    if (READ_ONLY) return;
+    fetch("/api/reimport", { method: "POST" }).then(function () { return load(); });
+  }
+  function exportNow() {
+    if (READ_ONLY) return;
+    fetch("/api/export").then(function (r) { return r.json(); }).then(function (r) {
+      alert("Exported:\n" + r.html + "\n" + r.json);
+    }, function () { alert("Export failed; see the console window."); });
+  }
+  function currentEmail() { return state.route.view === "account" ? state.route.email : state.selectedEmail; }
+  function focusTableFilter() {
+    if (state.route.view !== "accounts") { go("accounts"); }
+    var el = document.getElementById("table-filter");
+    if (el) { el.focus(); el.select(); }
+  }
+
+  // ---------- Dialog: shared by the changelog, with the backdrop guard ----------
+
+  function openDialog(title, content, onClosed) {
+    var previous = document.activeElement;
+    var oldOverflow = document.body.style.overflow;
+    var closeBtn = h("button", { type: "button", "aria-label": "Close", text: "✕" });
+    var sheet = h("div", { class: "sheet" }, h("div", { class: "sheet-head" }, h("h2", { class: "sheet-title", text: title }), closeBtn), content);
+    var scrim = h("div", { class: "scrim", role: "dialog", "aria-modal": "true", "aria-label": title }, sheet);
+    function close() {
+      document.removeEventListener("keydown", onKey, true);
+      scrim.remove();
+      document.body.style.overflow = oldOverflow;
+      if (previous && previous.focus) previous.focus();
+      if (onClosed) onClosed();
+    }
+    function onKey(e) { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); } }
+    // Close only on a click that landed on the backdrop itself: a click inside the panel (selecting text,
+    // scrolling the list) bubbles up here too and must not dismiss it.
+    scrim.addEventListener("click", function (e) { if (e.target === e.currentTarget) close(); });
+    closeBtn.addEventListener("click", close);
+    document.addEventListener("keydown", onKey, true);
+    document.body.style.overflow = "hidden";
+    document.body.appendChild(scrim);
+    closeBtn.focus();
+    return close;
+  }
+
+  // ---------- Footer and changelog ----------
+
+  function renderFooter() {
+    var line = document.getElementById("build-line");
+    line.textContent = CFG.appName + " · v" + (CFG.version || "0.0.0") + (CFG.buildTime ? " · built " + CFG.buildTime : "");
+    var footer = document.getElementById("build-info");
+    var old = footer.querySelector(".changelog-trigger");
+    if (old) old.remove();
+    var latest = state.changelog.length ? state.changelog[state.changelog.length - 1] : null;
+    if (!latest) return;
+    var btn = h("button", { type: "button", class: "changelog-trigger", title: latest, text: latest, onclick: openChangelog });
+    footer.appendChild(btn);
+  }
+  function openChangelog() {
+    if (!state.changelog.length) return;
+    // Outside <footer>, so the dialog does not inherit the footer's small monospace type.
+    openDialog("Changelog", h("ul", { class: "changelog-list" }, state.changelog.slice().reverse().map(function (l) { return h("li", { text: l }); })));
+  }
+  function loadChangelog() {
+    if (READ_ONLY || Array.isArray(CFG.changelog)) {
+      state.changelog = CFG.changelog || [];
+      renderFooter();
+      return;
+    }
+    // Fetched, not bundled: shipping an entry is a one-line edit to updates.txt. Any failure leaves build info alone.
+    fetch("/updates.txt", { cache: "no-cache" })
+      .then(function (r) { return r.ok ? r.text() : ""; })
+      .then(function (text) { state.changelog = P.parseChangelog(text); renderFooter(); })
+      .catch(function () { /* a missing changelog is not worth an error message */ });
+  }
+
+  // ---------- Display settings ----------
+
+  var DEFAULT_COLORS = { light: "#f6f7f9", dark: "#15181d" };
+  function applyTheme(id) {
+    var d = document.documentElement;
+    if (id === CFG.themes[0].id) delete d.dataset.theme; else d.dataset.theme = id;
+    var t = CFG.themes.filter(function (x) { return x.id === id; })[0];
+    document.querySelectorAll('meta[name="theme-color"]').forEach(function (m) {
+      var media = m.getAttribute("media") || "";
+      m.setAttribute("content", t && t.color ? t.color : media.indexOf("dark") >= 0 ? DEFAULT_COLORS.dark : DEFAULT_COLORS.light);
+    });
+  }
+  function applyDensity(id) { var d = document.documentElement; if (id === CFG.densities[0].id) delete d.dataset.density; else d.dataset.density = id; }
+  function applyTextSize(id) { var d = document.documentElement; if (id === CFG.textSizes[0].id) delete d.dataset.text; else d.dataset.text = id; }
+
+  function saved(list, key) {
+    var v = storage.get(key);
+    return list.some(function (x) { return x.id === v; }) ? v : list[0].id;
+  }
+  // The boot script already applied these; read them back only to show the controls' state.
+  var display = {
+    theme: saved(CFG.themes, CFG.keys.theme),
+    density: saved(CFG.densities, CFG.keys.density),
+    text: saved(CFG.textSizes, CFG.keys.text),
+  };
+  function chooseTheme(id) { display.theme = id; applyTheme(id); storage.set(CFG.keys.theme, id === CFG.themes[0].id ? null : id); syncSettings(); }
+  function chooseDensity(id) { display.density = id; applyDensity(id); storage.set(CFG.keys.density, id === CFG.densities[0].id ? null : id); syncSettings(); }
+  function chooseText(id) { display.text = id; applyTextSize(id); storage.set(CFG.keys.text, id === CFG.textSizes[0].id ? null : id); syncSettings(); }
+
+  var settingsPanel = null;
+  function syncSettings() {
+    if (!settingsPanel) return;
+    settingsPanel.querySelectorAll("input[type=radio]").forEach(function (r) { r.checked = display[r.name] === r.value; });
+    var tip = settingsPanel.querySelector("#density-tip");
+    if (tip) tip.textContent = CFG.densities.filter(function (d) { return d.id === display.density; })[0].tip;
+  }
+  function segmented(name, legend, list, choose) {
+    return h("fieldset", null, h("legend", { text: legend }),
+      h("div", { class: "segmented" }, list.map(function (c) {
+        return h("label", { title: c.tip },
+          h("input", { type: "radio", name: name, value: c.id, checked: display[name] === c.id, onchange: function () { choose(c.id); } }),
+          h("span", { text: c.label }));
+      })),
+      name === "density" ? h("div", { class: "seg-tip", id: "density-tip" }) : null);
+  }
+  function toggleSettings(force) {
+    var open = force != null ? force : !settingsPanel;
+    var button = document.getElementById("settings-button");
+    if (!open) {
+      if (settingsPanel) { settingsPanel.remove(); settingsPanel = null; }
+      button.setAttribute("aria-expanded", "false");
+      document.removeEventListener("pointerdown", onOutside, true);
+      window.removeEventListener("resize", updateScreen);
+      return;
+    }
+    if (settingsPanel) return;
+    settingsPanel = h("div", { id: "settings-panel", class: "settings-panel", role: "dialog", "aria-label": "Display settings" },
+      h("fieldset", null, h("legend", { text: "Theme" }), CFG.themes.map(function (t) {
+        return h("label", { class: "choice" },
+          h("input", { type: "radio", name: "theme", value: t.id, checked: display.theme === t.id, onchange: function () { chooseTheme(t.id); } }),
+          h("span", { text: t.label }), h("small", { text: t.tip }));
+      })),
+      segmented("density", "Density", CFG.densities, chooseDensity),
+      segmented("text", "Text size", CFG.textSizes, chooseText),
+      h("div", { class: "screen-info", id: "screen-info" }));
+    document.getElementById("settings").appendChild(settingsPanel);
+    button.setAttribute("aria-expanded", "true");
+    syncSettings();
+    updateScreen();
+    var checked = settingsPanel.querySelector("input:checked");
+    if (checked) checked.focus();
+    document.addEventListener("pointerdown", onOutside, true);
+    window.addEventListener("resize", updateScreen);
+  }
+  function onOutside(e) { if (!document.getElementById("settings").contains(e.target)) toggleSettings(false); }
+  function updateScreen() {
+    var el = document.getElementById("screen-info");
+    if (el) el.textContent = "This screen: " + window.innerWidth + " × " + window.innerHeight + " CSS pixels at " + (Math.round(window.devicePixelRatio * 100) / 100) + "×";
+  }
+
+  // ---------- Command palette ----------
+
+  function buildCommands() {
+    var detail = state.route.view === "account";
+    var email = currentEmail();
+    var cmds = [];
+    VIEWS.forEach(function (v) {
+      cmds.push({ id: "view-" + v.id, group: "View", label: "Go to " + v.label, hotkey: v.key, disabled: state.route.view === v.id, run: function () { go(v.id); } });
+    });
+    cmds.push({ id: "back", group: "View", label: "Back to accounts", hotkey: "Esc", disabled: !detail, run: function () { go("accounts"); } });
+    cmds.push({ id: "copy-email", group: "Account", label: email ? "Copy email: " + email : "Copy email of the current account", hotkey: "C", disabled: !email, run: function () { copyText(email); } });
+    cmds.push({ id: "open-selected", group: "Account", label: "Open the selected account", disabled: !state.selectedEmail || detail, run: function () { go("account", state.selectedEmail); } });
+    cmds.push({ id: "focus-filter", group: "Table", label: "Filter the accounts table", hotkey: "F", run: focusTableFilter });
+    cmds.push({ id: "clear-filter", group: "Table", label: "Clear the filter", disabled: !state.filter, run: function () { setFilter(""); } });
+    cmds.push({ id: "all-statuses", group: "Table", label: "Show all statuses", disabled: !state.status, run: function () { state.status = ""; render(); } });
+    [["lastLoginUtc", "last login"], ["gems", "gems"], ["gold", "gold"], ["wcRare", "rare wildcards"], ["wcMythic", "mythic wildcards"], ["customDeckCount", "custom decks"], ["email", "email"]].forEach(function (p) {
+      cmds.push({ id: "sort-" + p[0], group: "Table", label: "Sort by " + p[1] + (state.sort.key === p[0] ? (state.sort.dir > 0 ? ": switch to descending" : ": switch to ascending") : ""), run: function () { go("accounts"); setSort(p[0]); } });
+    });
+    cmds.push({ id: "copy-stale", group: "Stale", label: "Copy all stale emails (" + staleAccounts().length + ")", disabled: !staleAccounts().length, run: function () { copyText(staleAccounts().map(function (a) { return a.email; }).join("\n")); } });
+    cmds.push({ id: "refresh", group: "Data", label: "Refresh now", hotkey: "R", disabled: READ_ONLY, run: load });
+    cmds.push({ id: "reimport", group: "Data", label: "Re-import the accounts CSV", disabled: READ_ONLY, run: reimport });
+    cmds.push({ id: "export", group: "Export", label: "Write the static export", disabled: READ_ONLY, run: exportNow });
+    cmds.push({ id: "settings", group: "Settings", label: "Open display settings", run: function () { toggleSettings(true); } });
+    CFG.themes.forEach(function (t) { cmds.push({ id: "theme-" + t.id, group: "Settings", label: "Theme: " + t.label + (display.theme === t.id ? " (in use)" : ""), disabled: display.theme === t.id, run: function () { chooseTheme(t.id); } }); });
+    CFG.densities.forEach(function (d) { cmds.push({ id: "density-" + d.id, group: "Settings", label: "Density: " + d.label + (display.density === d.id ? " (in use)" : ""), disabled: display.density === d.id, run: function () { chooseDensity(d.id); } }); });
+    CFG.textSizes.forEach(function (t) { cmds.push({ id: "text-" + t.id, group: "Settings", label: "Text size: " + t.label + (display.text === t.id ? " (in use)" : ""), disabled: display.text === t.id, run: function () { chooseText(t.id); } }); });
+    cmds.push({ id: "changelog", group: "Help", label: "Show the changelog", disabled: !state.changelog.length, run: openChangelog });
+    return cmds;
+  }
+
+  function searchItems(query) {
+    var q = query.trim();
+    var hits = state.data.accounts.filter(function (a) { return P.matchesAccount(a, q); });
+    var items = [];
+    if (hits.length) {
+      items.push({ id: "show-only", group: "Filter", label: "Show only the " + hits.length + " accounts matching '" + q + "'", run: function () { state.filter = q; go("accounts"); } });
+    }
+    hits.slice(0, 50).forEach(function (a) {
+      items.push({
+        id: "acct-" + a.email, group: "Account", label: a.email + (a.displayName ? " · " + a.displayName : ""), item: true,
+        snippet: P.snippet(P.accountText(a), q, 80),
+        run: function () { state.selectedEmail = a.email; state.didScrollSelected = false; go("account", a.email); },
+      });
+    });
+    return items;
+  }
+
+  var palette = null;
+  function openPalette(seed) {
+    if (palette) { palette.input.focus(); palette.input.select(); return; }
+    toggleSettings(false);
+    var previous = document.activeElement;
+    var commands = buildCommands();
+    var query = seed || "";
+    var active = 0;
+    var shown = [];
+    var input = h("input", {
+      type: "text", value: query, placeholder: "Search or run a command…", "aria-label": "Search and commands",
+      "aria-controls": "palette-list", autocomplete: "off", spellcheck: "false", role: "combobox", "aria-expanded": "true",
+    });
+    var list = h("ul", { id: "palette-list", role: "listbox", "aria-label": "Commands and accounts" });
+    var box = h("div", { class: "palette", role: "dialog", "aria-label": "Command palette" }, input, list);
+    var scrim = h("div", { class: "scrim palette-scrim" }, box);
+
+    function compute() {
+      var cmds = P.filterCommands(commands, query);
+      shown = cmds.concat(query.trim() ? searchItems(query) : []);
+    }
+    function draw() {
+      list.replaceChildren();
+      if (!shown.length) list.appendChild(h("li", { class: "p-empty", role: "option", "aria-disabled": "true", text: "No command or account matches." }));
+      var sawItem = false;
+      shown.forEach(function (c, i) {
+        if (c.item && !sawItem) { sawItem = true; list.appendChild(h("li", { class: "p-sep", role: "presentation", text: "Accounts" })); }
+        list.appendChild(h("li", {
+          id: "cmd-" + i, role: "option", "aria-selected": i === active ? "true" : "false", "aria-disabled": c.disabled ? "true" : null,
+          class: i === active ? "active" : null, dataset: { index: String(i) },
+          onmousemove: function () { if (active !== i) { active = i; mark(); } },
+          onclick: function () { run(c); },
+        },
+          h("span", { class: "p-group", text: c.group }),
+          h("span", { class: "p-main" }, h("span", { class: "p-label", text: c.label }), c.snippet ? h("span", { class: "p-snippet", text: c.snippet }) : null),
+          c.hotkey ? h("kbd", { text: c.hotkey }) : null));
+      });
+      mark();
+    }
+    function mark() {
+      list.querySelectorAll("li[data-index]").forEach(function (li) {
+        var on = Number(li.dataset.index) === active;
+        li.classList.toggle("active", on);
+        li.setAttribute("aria-selected", on ? "true" : "false");
+        if (on) li.scrollIntoView({ block: "nearest" });
+      });
+      if (shown[active]) input.setAttribute("aria-activedescendant", "cmd-" + active); else input.removeAttribute("aria-activedescendant");
+    }
+    function close() {
+      scrim.remove();
+      palette = null;
+      window.visualViewport && window.visualViewport.removeEventListener("resize", fit);
+      if (previous && previous.focus && document.contains(previous)) previous.focus();
+    }
+    function run(c) {
+      if (!c || c.disabled) return;
+      close();
+      // After the palette is gone, so a command that moves focus keeps it.
+      requestAnimationFrame(function () { c.run(); });
+    }
+    function fit() {
+      if (window.visualViewport) document.documentElement.style.setProperty("--vvh", window.visualViewport.height + "px");
+    }
+    input.addEventListener("input", function () { query = input.value; active = 0; compute(); draw(); });
+    input.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); }
+      else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        var n = shown.length;
+        if (n) { active = (active + (e.key === "ArrowDown" ? 1 : n - 1)) % n; mark(); }
+      } else if (e.key === "Enter") { e.preventDefault(); run(shown[active]); }
+    });
+    scrim.addEventListener("mousedown", function (e) { if (e.target === e.currentTarget) close(); });
+    palette = { input: input, close: close };
+    compute();
+    document.body.appendChild(scrim);
+    draw();
+    fit();
+    window.visualViewport && window.visualViewport.addEventListener("resize", fit);
+    input.focus();
+    input.select();
+  }
+
+  // ---------- Global keys ----------
+
+  document.addEventListener("keydown", function (e) {
+    var mod = e.ctrlKey || e.metaKey;
+    var k = e.key.toLowerCase();
+    // Ctrl+K works everywhere, even inside a text field, and reopens on the current filter.
+    if (mod && !e.shiftKey && k === "k") { e.preventDefault(); openPalette(state.filter); return; }
+    if (mod && e.shiftKey && k === "p") { e.preventDefault(); openPalette(""); return; }
+    if (mod || e.altKey || palette) return;
+    if (document.querySelector(".scrim")) return;
+    if (e.key === "Escape" && settingsPanel) { toggleSettings(false); document.getElementById("settings-button").focus(); return; }
+    var typing = e.target && e.target.closest && e.target.closest("input, textarea, select, [contenteditable='true']");
+    if (typing) return;
+    if (e.key === "/") { e.preventDefault(); openPalette(state.filter); return; }
+    if (e.key === "Escape" && state.route.view === "account") { go("accounts"); return; }
+    var v = VIEWS.filter(function (x) { return x.key === e.key; })[0];
+    if (v) { go(v.id); return; }
+    if (k === "r" && !READ_ONLY) { load(); return; }
+    if (k === "f") { e.preventDefault(); focusTableFilter(); return; }
+    if (k === "c" && currentEmail()) { copyText(currentEmail()); return; }
+  });
+
+  // ---------- Start ----------
+
+  document.getElementById("palette-trigger").addEventListener("click", function () { openPalette(state.filter); });
+  document.getElementById("search-clear").addEventListener("click", function () { setFilter(""); document.getElementById("palette-trigger").focus(); });
+  document.getElementById("settings-button").addEventListener("click", function () { toggleSettings(); });
+  window.addEventListener("hashchange", onRoute);
+  if (READ_ONLY) document.title = CFG.appName + " (snapshot)";
+  state.route = parseRoute();
+  if (state.route.view === "account") state.selectedEmail = state.route.email;
+  renderFooter();
+  loadChangelog();
+  load();
+  connectLive();
+})();
+</script>
+</body>
+</html>

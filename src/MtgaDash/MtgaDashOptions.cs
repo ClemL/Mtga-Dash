@@ -1,0 +1,35 @@
+namespace MtgaDash;
+
+/// <summary>The <c>MtgaDash</c> section of appsettings.json. Paths may contain %ENVIRONMENT% variables.</summary>
+public sealed class MtgaDashOptions
+{
+    public const string Section = "MtgaDash";
+
+    public string LogFolder { get; set; } = @"C:\dev\mtga\logs";
+    public string LiveLogPath { get; set; } = @"%USERPROFILE%\AppData\LocalLow\Wizards Of The Coast\MTGA\Player.log";
+    public bool WatchLiveLog { get; set; } = true;
+    public int PollSeconds { get; set; } = 5;
+    public string DatabasePath { get; set; } = @"C:\dev\mtga\data\mtga.db";
+    public string AccountsCsvPath { get; set; } = @"C:\dev\mtga\data\mtga_accounts_20261112.csv";
+    public int StaleDays { get; set; } = 30;
+    public string ExportFolder { get; set; } = "";
+    public bool AllowLan { get; set; }
+    public int Port { get; set; } = 5080;
+
+    /// <summary>
+    /// Optional path to MTGA's card database, for card names. May end in a wildcard; the newest match wins,
+    /// because MTGA writes a new <c>Raw_CardDatabase_&lt;hash&gt;.mtga</c> with each update.
+    /// </summary>
+    public string CardDbPath { get; set; } = "";
+
+    /// <summary>Expands environment variables and makes the path absolute. Empty stays empty.</summary>
+    public static string Resolve(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return "";
+        var expanded = Environment.ExpandEnvironmentVariables(path.Trim());
+        // %USERPROFILE% is unset off Windows; fall back to the home folder so tests and Linux runs still resolve.
+        if (expanded.Contains("%USERPROFILE%", StringComparison.OrdinalIgnoreCase))
+            expanded = expanded.Replace("%USERPROFILE%", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), StringComparison.OrdinalIgnoreCase);
+        return Path.GetFullPath(expanded);
+    }
+}

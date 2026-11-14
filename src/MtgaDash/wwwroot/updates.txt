@@ -1,0 +1,11 @@
+2026-11-14T16:22:00Z - MtgaDash launches: reads archived and live Player.log files into a local database and shows every account on one page
+2026-11-14T16:22:00Z - Accounts table with search, status filter, sorting and color-coded last login; click a row for its detail
+2026-11-14T16:22:00Z - Account detail: gems, gold and wildcard history charts, latest boosters, rank and custom decks with their card lists
+2026-11-14T16:22:00Z - Stale view lists accounts not logged in for a chosen number of days, oldest first, with one-click email copy
+2026-11-14T16:22:00Z - Totals view: gems, gold and wildcards across all accounts, boosters by set and last-login buckets
+2026-11-14T16:22:00Z - Review view lists unmatched and ambiguous display names with the exact exception line to paste, and accounts marked unused that hold decks or rare wildcards
+2026-11-14T16:22:00Z - The page updates live as new log data arrives, and a static read-only copy can be exported for viewing on a phone
+2026-11-14T16:22:00Z - Card names shown next to card ids when MTGA's local card database is configured
+2026-11-14T16:22:00Z - Command palette: press Ctrl+K to search accounts or run any action, with each shortcut shown beside it
+2026-11-14T16:22:00Z - Settings menu with System, Light, Dark, OLED and High contrast themes, three densities and four text sizes, remembered on this device
+2026-11-14T16:22:00Z - Added this changelog

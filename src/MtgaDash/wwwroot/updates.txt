@@ -9,3 +9,6 @@
 2026-11-14T16:22:00Z - Command palette: press Ctrl+K to search accounts or run any action, with each shortcut shown beside it
 2026-11-14T16:22:00Z - Settings menu with System, Light, Dark, OLED and High contrast themes, three densities and four text sizes, remembered on this device
 2026-11-14T16:22:00Z - Added this changelog
+2026-11-15T03:49:00Z - Review tab maps an ambiguous or unmatched display name to its account with one click; mappings are saved beside the database and listed with a Remove button
+2026-11-15T03:49:00Z - New Status tab shows the last poll, how far each log file is read and recent parse warnings, and warns when MTGA runs with Detailed Logs off
+2026-11-15T03:49:00Z - Other websites open in the browser can no longer read the dashboard's data or trigger a re-import or export

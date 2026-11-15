@@ -215,6 +215,9 @@ kbd {
 }
 .tabs a[aria-current="page"] { color: var(--fg); border-bottom-color: var(--accent); font-weight: 600; }
 .tabs .count { font-size: calc(11px * var(--text-scale)); background: var(--panel-2); border-radius: 9px; padding: 0 6px; color: var(--fg-dim); }
+.tabs .count.issue { color: var(--bad); border: 1px solid var(--bad); background: none; font-weight: 600; }
+.issue-line { color: var(--bad); font-weight: 600; }
+.map-input { flex: 1 1 14em; min-width: 0; }
 
 main { padding: var(--section-gap) 0; flex: 1 0 auto; min-width: 0; }
 h2 { font-size: calc(17px * var(--text-scale)); margin: 0 0 var(--block); }
@@ -529,6 +532,7 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
     staleDays: CFG.staleDays || 30,
     selectedEmail: null,
     data: { accounts: [], totals: null, review: null, statuses: [] },
+    ingest: null,
     loaded: false,
     detail: null,
     updatedAt: null,
@@ -613,8 +617,9 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
       render();
       return Promise.resolve();
     }
-    return Promise.all([api("/api/accounts"), api("/api/totals"), api("/api/review"), api("/api/statuses")]).then(function (r) {
+    return Promise.all([api("/api/accounts"), api("/api/totals"), api("/api/review"), api("/api/statuses"), api("/api/status")]).then(function (r) {
       state.data = { accounts: r[0], totals: r[1], review: r[2], statuses: r[3] };
+      state.ingest = r[4];
       state.loaded = true;
       state.updatedAt = new Date().toISOString();
       if (state.route.view === "account") return loadDetail(state.route.email);
@@ -650,7 +655,7 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
   function parseRoute() {
     var hsh = location.hash.replace(/^#\/?/, "");
     if (hsh.indexOf("account/") === 0) return { view: "account", email: decodeURIComponent(hsh.slice(8)) };
-    return { view: ["accounts", "stale", "totals", "review"].indexOf(hsh) >= 0 ? hsh : "accounts" };
+    return { view: VIEWS.some(function (v) { return v.id === hsh; }) ? hsh : "accounts" };
   }
   function go(view, email) {
     var target = view === "account" ? "#/account/" + encodeURIComponent(email) : "#/" + view;
@@ -675,7 +680,8 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
     { id: "stale", label: "Stale", key: "2" },
     { id: "totals", label: "Totals", key: "3" },
     { id: "review", label: "Review", key: "4" },
-  ];
+    { id: "status", label: "Status", key: "5" },
+  ].filter(function (v) { return !(READ_ONLY && v.id === "status"); }); // the export has no ingestion to report on
 
   function filteredAccounts() {
     return state.data.accounts.filter(function (a) {
@@ -712,6 +718,7 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
     else if (r === "stale") renderStale(view);
     else if (r === "totals") renderTotals(view);
     else if (r === "review") renderReview(view);
+    else if (r === "status") renderStatus(view);
     else if (r === "account") renderDetail(view);
     // Re-rendering on a live update must not steal the caret from a filter box or jump the page.
     if (focusedId) {
@@ -728,10 +735,12 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
     var nav = document.getElementById("tabs");
     nav.replaceChildren();
     var counts = { accounts: state.data.accounts.length, stale: staleAccounts().length, review: reviewCount() };
+    var issues = state.ingest ? state.ingest.issues.length : 0;
     VIEWS.forEach(function (v) {
       var current = state.route.view === v.id || (v.id === "accounts" && state.route.view === "account");
       nav.appendChild(h("a", { href: "#/" + v.id, "aria-current": current ? "page" : null, title: v.label + " (" + v.key + ")" },
-        v.label, counts[v.id] != null && state.loaded ? h("span", { class: "count", text: fmt(counts[v.id]) }) : null));
+        v.label, counts[v.id] != null && state.loaded ? h("span", { class: "count", text: fmt(counts[v.id]) }) : null,
+        v.id === "status" && issues ? h("span", { class: "count issue", title: issues + " issues", text: "!" + issues }) : null));
     });
   }
 
@@ -911,18 +920,38 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
   function renderReview(view) {
     var r = state.data.review;
     if (!r) { view.appendChild(h("p", { class: "muted", text: "Nothing to review." })); return; }
-    view.appendChild(h("p", { class: "muted", text: "Paste a line into AccountExceptions.DisplayNameToEmail (src/MtgaDash/Accounts/AccountExceptions.cs), rebuild and restart." }));
+    view.appendChild(h("p", { class: "muted", text: READ_ONLY
+      ? "Map display names in the live dashboard; this snapshot is read-only."
+      : "Map a display name to its account here; the mapping is saved beside the database and applied at once. A line pasted into AccountExceptions.cs does the same after a rebuild." }));
+    // One list of every account email, for the browser's suggestions in each Map box.
+    if (!READ_ONLY) view.appendChild(h("datalist", { id: "account-emails" }, state.data.accounts.map(function (a) { return h("option", { value: a.email }); })));
 
     view.appendChild(h("h3", { text: "Unmatched display names (" + r.unmatched.length + ")" }));
-    view.appendChild(r.unmatched.length ? h("ul", { class: "list-plain card" }, r.unmatched.map(function (u) {
-      return h("li", null, h("strong", { text: u.displayName }), h("span", { class: "muted", text: "last login " + (P.relativeTime(u.lastLoginUtc, Date.now()) || "never") }), codeLine(u.exceptionLine));
+    view.appendChild(r.unmatched.length ? h("ul", { class: "list-plain card" }, r.unmatched.map(function (u, i) {
+      var input = h("input", { type: "email", list: "account-emails", id: "map-" + i, placeholder: "Account email", "aria-label": "Account email for " + u.displayName, class: "map-input" });
+      var mapForm = READ_ONLY ? codeLine(u.exceptionLine) : h("form", { class: "code-line", onsubmit: function (e) { e.preventDefault(); saveMapping(u.displayName, input.value); } },
+        input, h("button", { type: "submit", text: "Map" }));
+      return h("li", null, h("strong", { text: u.displayName }), h("span", { class: "muted", text: "last login " + (P.relativeTime(u.lastLoginUtc, Date.now()) || "never") }), mapForm);
     })) : h("p", { class: "muted", text: "Every display name is matched." }));
 
     view.appendChild(h("h3", { text: "Ambiguous aliases (" + r.ambiguous.length + ")" }));
     view.appendChild(r.ambiguous.length ? h("ul", { class: "list-plain card" }, r.ambiguous.map(function (a) {
       return h("li", null, h("strong", { text: a.displayName }), h("span", { class: "muted", text: a.candidates.length + " candidates" }),
-        a.exceptionLines.map(codeLine));
+        a.candidates.map(function (email, i) {
+          return READ_ONLY ? codeLine(a.exceptionLines[i]) : h("div", { class: "code-line" }, h("code", { text: email }),
+            h("button", { type: "button", onclick: function () { saveMapping(a.displayName, email); }, text: "Use this email" }));
+        }));
     })) : h("p", { class: "muted", text: "No alias is shared by two accounts." }));
+
+    var maps = r.mappings || [];
+    view.appendChild(h("h3", { text: "Exception mappings (" + maps.length + ")" }));
+    view.appendChild(maps.length ? h("ul", { class: "list-plain card" }, maps.map(function (m) {
+      return h("li", null, h("strong", { text: m.displayName }), h("span", { text: "→" }), h("span", { class: "mono", text: m.email }),
+        h("span", { class: "pill", text: m.source === "file" ? "saved here" : "in code" }),
+        !m.accountExists ? h("span", { class: "login old", text: "no such account in the CSV" }) : null,
+        !m.playerSeen ? h("span", { class: "muted", text: "display name not seen in any log yet" }) : null,
+        m.source === "file" && !READ_ONLY ? h("button", { type: "button", onclick: function () { removeMapping(m.displayName); }, text: "Remove" }) : null);
+    })) : h("p", { class: "muted", text: "No exception mappings yet." }));
 
     view.appendChild(h("h3", { text: "Marked unused, but has decks or rare wildcards (" + r.statusMismatches.length + ")" }));
     view.appendChild(r.statusMismatches.length ? h("div", { class: "table-wrap" }, h("table", null,
@@ -932,6 +961,44 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
           h("td", { class: "mono", text: m.email }), h("td", { text: m.displayName || "—" }), h("td", { text: m.status || "" }),
           h("td", { class: "num", text: fmt(m.customDeckCount) }), h("td", { class: "num", text: fmt(m.wcRare) }), h("td", { class: "num", text: fmt(m.wcMythic) }));
       })))) : h("p", { class: "muted", text: "No account marked unused has decks or rare wildcards." }));
+  }
+
+  function bytes(n) {
+    return n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : n >= 1024 ? Math.round(n / 1024) + " KB" : n + " B";
+  }
+
+  function renderStatus(view) {
+    var s = state.ingest;
+    if (!s) { view.appendChild(h("p", { class: "muted", text: "No status yet." })); return; }
+    var now = Date.now();
+    view.appendChild(h("div", { class: "toolbar" },
+      h("span", null, "Last poll ", h("strong", { text: P.relativeTime(s.lastPollUtc, now) || "not yet" }),
+        s.lastPollUtc ? h("span", { class: "muted", text: " · took " + s.lastPollMs + " ms · every " + s.pollSeconds + " s" }) : null),
+      h("button", { type: "button", onclick: refreshStatus, text: "Refresh" })));
+    if (s.issues.length) {
+      view.appendChild(h("ul", { class: "list-plain card issues" }, s.issues.map(function (i) { return h("li", { class: "issue-line", text: i }); })));
+    } else {
+      view.appendChild(h("p", { class: "notice", text: "No problems found." }));
+    }
+
+    view.appendChild(h("h3", { text: "Log files (" + s.files.length + ")" }));
+    view.appendChild(s.files.length ? h("div", { class: "table-wrap" }, h("table", null,
+      h("thead", null, h("tr", null, ["File", "Size", "Read", "Last written", "Logged in as", "Inventory this session"].map(function (t, i) { return h("th", { class: i === 1 || i === 2 ? "num" : null, text: t }); }))),
+      h("tbody", null, s.files.map(function (f) {
+        var pct = f.length ? Math.min(100, Math.round(f.processed / f.length * 100)) : 0;
+        return h("tr", null,
+          h("td", { class: "mono", title: f.path, text: f.name }),
+          h("td", { class: "num", text: f.exists ? bytes(f.length) : "missing" }),
+          h("td", { class: "num", text: pct + "%" }),
+          h("td", { text: P.relativeTime(f.lastWriteUtc, now) || "—" }),
+          h("td", { text: f.displayName || "—" }),
+          h("td", { text: f.error ? "error: " + f.error : f.sessionTimeUtc ? "yes" : f.displayName ? "none yet" : "—" }));
+      })))) : h("p", { class: "muted", text: "No log files found. Check LogFolder and LiveLogPath in appsettings.json." }));
+
+    view.appendChild(h("h3", { text: "Parse warnings: " + s.warnings24h + " in the last 24 hours" }));
+    view.appendChild(s.recentWarnings.length ? h("ul", { class: "list-plain card" }, s.recentWarnings.map(function (w) {
+      return h("li", null, h("span", { class: "muted", text: P.relativeTime(w.atUtc, now) }), h("span", { class: "mono", text: w.path.split(/[\\/]/).pop() + ":" + w.line }), h("span", { text: w.message }));
+    })) : h("p", { class: "muted", text: "No lines were skipped since the app started." }));
   }
 
   // Two measures of different scale get two charts, never two y-axes.
@@ -1092,15 +1159,44 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
 
   // ---------- Actions ----------
 
+  // Every state-changing request carries this header; the server refuses one without it, which is what
+  // stops another website from posting to this app through your browser.
+  function mutate(method, path, body) {
+    return fetch(path, {
+      method: method,
+      headers: body ? { "X-MtgaDash": "1", "Content-Type": "application/json" } : { "X-MtgaDash": "1" },
+      body: body ? JSON.stringify(body) : undefined,
+    }).then(function (r) {
+      if (r.ok) return r.status === 204 ? null : r.json();
+      return r.json().catch(function () { return {}; }).then(function (p) { throw new Error(p.detail || p.title || ("HTTP " + r.status)); });
+    });
+  }
   function reimport() {
     if (READ_ONLY) return;
-    fetch("/api/reimport", { method: "POST" }).then(function () { return load(); });
+    mutate("POST", "/api/reimport").then(function () { return load(); }, function (e) { alert("Re-import failed: " + e.message); });
   }
   function exportNow() {
     if (READ_ONLY) return;
-    fetch("/api/export").then(function (r) { return r.json(); }).then(function (r) {
+    mutate("POST", "/api/export").then(function (r) {
       alert("Exported:\n" + r.html + "\n" + r.json);
-    }, function () { alert("Export failed; see the console window."); });
+    }, function (e) { alert("Export failed: " + e.message); });
+  }
+  function saveMapping(displayName, email) {
+    if (READ_ONLY) return;
+    email = String(email || "").trim();
+    if (!email) { alert("Enter the account's email first."); return; }
+    mutate("POST", "/api/exceptions", { displayName: displayName, email: email }).then(load, function (e) { alert("Could not map " + displayName + ": " + e.message); });
+  }
+  function removeMapping(displayName) {
+    if (READ_ONLY) return;
+    mutate("DELETE", "/api/exceptions/" + encodeURIComponent(displayName)).then(load, function (e) { alert("Could not remove the mapping: " + e.message); });
+  }
+  function refreshStatus() {
+    if (READ_ONLY) return Promise.resolve();
+    return api("/api/status").then(function (s) {
+      state.ingest = s;
+      if (state.route.view === "status") render(); else renderTabs();
+    }, function () { /* the next refresh tries again */ });
   }
   function currentEmail() { return state.route.view === "account" ? state.route.email : state.selectedEmail; }
   function focusTableFilter() {
@@ -1273,6 +1369,18 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
     CFG.themes.forEach(function (t) { cmds.push({ id: "theme-" + t.id, group: "Settings", label: "Theme: " + t.label + (display.theme === t.id ? " (in use)" : ""), disabled: display.theme === t.id, run: function () { chooseTheme(t.id); } }); });
     CFG.densities.forEach(function (d) { cmds.push({ id: "density-" + d.id, group: "Settings", label: "Density: " + d.label + (display.density === d.id ? " (in use)" : ""), disabled: display.density === d.id, run: function () { chooseDensity(d.id); } }); });
     CFG.textSizes.forEach(function (t) { cmds.push({ id: "text-" + t.id, group: "Settings", label: "Text size: " + t.label + (display.text === t.id ? " (in use)" : ""), disabled: display.text === t.id, run: function () { chooseText(t.id); } }); });
+    cmds.push({ id: "status-refresh", group: "Status", label: "Refresh ingestion status", disabled: READ_ONLY, run: refreshStatus });
+    var rv = state.data.review;
+    if (rv && !READ_ONLY) {
+      rv.ambiguous.forEach(function (a) {
+        a.candidates.forEach(function (email) {
+          cmds.push({ id: "map-" + a.displayName + "-" + email, group: "Review", label: "Map " + a.displayName + " to " + email, run: function () { saveMapping(a.displayName, email); } });
+        });
+      });
+      (rv.mappings || []).filter(function (m) { return m.source === "file"; }).forEach(function (m) {
+        cmds.push({ id: "unmap-" + m.displayName, group: "Review", label: "Remove the mapping for " + m.displayName, run: function () { removeMapping(m.displayName); } });
+      });
+    }
     cmds.push({ id: "changelog", group: "Help", label: "Show the changelog", disabled: !state.changelog.length, run: openChangelog });
     return cmds;
   }
@@ -1412,6 +1520,8 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
   loadChangelog();
   load();
   connectLive();
+  // Polls run without changing data, so the status (last poll, file sizes) is refreshed on its own.
+  if (!READ_ONLY) setInterval(function () { if (!document.hidden) refreshStatus(); }, 15000);
 })();
 </script>
 </body>

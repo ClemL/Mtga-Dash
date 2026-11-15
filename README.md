@@ -10,8 +10,10 @@ single-page dashboard on `http://localhost:5080` that updates live.
 - **Totals**: gems, gold and wildcards across all accounts, boosters by set, last-login buckets.
 - **Account detail**: gems/gold and rare/mythic history charts, latest boosters, rank, custom decks with
   card lists (precons collapsed).
-- **Review**: unmatched and ambiguous display names with the line to paste into `AccountExceptions.cs`,
-  and accounts marked unused that still hold decks or rare wildcards.
+- **Review**: unmatched and ambiguous display names, mapped to their account with one click, and
+  accounts marked unused that still hold decks or rare wildcards.
+- **Status**: when the last poll ran, how far each log file has been read, recent parse warnings, and a
+  warning when MTGA is running with Detailed Logs off.
 
 Everything runs offline: no npm, no CDN, no build step for the page.
 
@@ -63,6 +65,7 @@ Any setting can be overridden on the command line, e.g. `--MtgaDash:Port=5090`.
 | `AllowLan` | `false` | Listen on `0.0.0.0` instead of `localhost`. |
 | `Port` | `5080` | HTTP port. |
 | `CardDbPath` | *(empty)* | MTGA's card database for card names; see below. |
+| `ExceptionsPath` | *(empty)* | Where Review-tab mappings are saved; empty means `account-exceptions.json` beside the database. |
 
 ### How ingestion works
 
@@ -89,13 +92,21 @@ alias match is **unmatched**. Both appear on the Review tab.
 
 ### Adding an exception mapping
 
-1. Open the Review tab and copy the line shown for the display name, e.g.
-   `["Corsair#12345"] = "base2+corsair@example.com",`.
-2. Paste it into `DisplayNameToEmail` in `src/MtgaDash/Accounts/AccountExceptions.cs`.
-3. Rebuild (and republish if you run the published copy) and restart. Matching re-runs on every start, and
-   an exception always beats the alias rules.
+On the Review tab:
 
-`ExcludedEmails` in the same file lists accounts the alias rules must never match on their own.
+- **Ambiguous alias**: choose **Use this email** beside the right candidate.
+- **Unmatched name**: type or pick the account's email in the box and choose **Map**. An email that is not
+  in the accounts CSV is refused, so a typo cannot create a mapping to nothing.
+
+The mapping applies at once and is saved in `account-exceptions.json` beside the database (setting
+`ExceptionsPath`), so it survives rebuilds, republishing and CSV re-imports. **Exception mappings** on the
+same tab lists every mapping with a **Remove** button. The file can also be edited by hand; changes are
+picked up on the next request. A file that is not valid JSON is ignored, logged, and never overwritten.
+
+Mappings can also be compiled in: paste a line such as `["Corsair#12345"] = "base2+corsair@example.com",`
+into `DisplayNameToEmail` in `src/MtgaDash/Accounts/AccountExceptions.cs`, then rebuild and restart. When
+both name the same display name, the file wins. `ExcludedEmails` (in either place) lists accounts the alias
+rules must never match on their own. An exception always beats the alias rules.
 
 ### Card names (optional)
 
@@ -132,6 +143,34 @@ New-NetFirewallRule -DisplayName "MtgaDash 5080" -Direction Inbound -Protocol TC
 There is no authentication: enable this only on a private network. Over plain HTTP the browser blocks the
 clipboard API, so Copy buttons fall back to an older copy method.
 
+To keep the protection against DNS rebinding (below) on the LAN, list the names you browse to in
+`appsettings.json`, e.g. `"AllowedHosts": "localhost;127.0.0.1;MYPC;192.168.1.20"`. Without that line any
+host name is accepted while `AllowLan` is on.
+
+## Security
+
+The app has no login, so it protects itself from other websites open in the same browser:
+
+- **Host check**: with `AllowLan` off, only requests addressed to `localhost`, `127.0.0.1` or `[::1]` are
+  answered. A page that points its own domain at your PC (DNS rebinding) gets `400 Bad Request` instead of
+  your account list.
+- **Write header**: every request that changes something (re-import, export, mappings) must carry the
+  header `X-MtgaDash: 1`, which the page adds. Another site can send a plain form POST to localhost, but
+  not a custom header, so it cannot trigger those actions.
+- **Export is POST-only**, so an image tag on another page cannot write files.
+
+## Status tab
+
+The Status tab (key `5`) shows the last poll and how long it took, every log file with its size, how much
+has been read, who is logged in and whether inventory arrived, and the parse warnings of the last 24 hours.
+Its tab shows a red count when something needs attention:
+
+- a logged-in session in a file written in the last 15 minutes, with no inventory 5 minutes after the
+  client started: MTGA's **Detailed Logs (Plugin Support)** is off;
+- a file that could not be read;
+- no poll for a while (ingestion stuck);
+- the live log missing at `LiveLogPath`.
+
 ## Static export (phone, PC off)
 
 With `ExportFolder` set, 30 s after data changes the app writes:
@@ -140,7 +179,7 @@ With `ExportFolder` set, 30 s after data changes the app writes:
 - `mtga_export_yyyyMMdd_HHmm.json`: the same data as JSON.
 
 The full paths are printed after each export. **Write the static export** in the command palette (or
-`GET /api/export`) exports immediately, into `export` beside the data folder if `ExportFolder` is empty.
+`POST /api/export`) exports immediately, into `export` beside the data folder if `ExportFolder` is empty.
 
 ## Command palette and shortcuts
 
@@ -152,7 +191,7 @@ applies the text as the Accounts filter, which the search box in the header then
 |---|---|
 | `Ctrl+K`, `/` | Open the palette on the current filter |
 | `Ctrl+Shift+P` | Open the palette empty |
-| `1` `2` `3` `4` | Accounts, Stale, Totals, Review |
+| `1` `2` `3` `4` `5` | Accounts, Stale, Totals, Review, Status |
 | `Esc` | Back to Accounts from an account; closes any dialog |
 | `F` | Focus the table filter |
 | `R` | Refresh now |
@@ -192,6 +231,9 @@ dotnet build MtgaDash.sln
 ```bash
 dotnet test MtgaDash.sln
 ```
+
+CI (`.github/workflows/ci.yml`) runs the same two commands on `windows-latest`, with Node for the page's
+JavaScript tests, on every pull request and on pushes to `main`.
 
 Tests that read the real logs in `testdata/` (`Player.log`, `Player-prev.log`, the accounts CSV) report
 Inconclusive when those files are absent. `testdata/`, `data/`, `logs/`, `export/`, `*.csv` and `*.db` are

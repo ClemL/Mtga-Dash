@@ -180,11 +180,12 @@ public static class Writer
     }
 
     /// <summary>Recomputes every match from scratch; see <see cref="AccountMatcher"/>.</summary>
-    public static MatchResult RunMatching(SqliteConnection c)
+    public static MatchResult RunMatching(SqliteConnection c, ExceptionStore? store = null)
     {
         var emails = c.Query<string>("SELECT Email FROM Accounts").ToList();
         var players = c.Query<string>("SELECT DisplayName FROM Players ORDER BY LastLoginUtc DESC").ToList();
-        var result = AccountMatcher.Match(emails, players);
+        var (map, excluded) = store?.Current() ?? (AccountExceptions.DisplayNameToEmail, AccountExceptions.ExcludedEmails);
+        var result = AccountMatcher.Match(emails, players, map, excluded);
 
         using var tx = c.BeginTransaction();
         c.Execute("UPDATE Players SET Email = NULL", transaction: tx);

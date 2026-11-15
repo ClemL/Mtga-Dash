@@ -8,7 +8,8 @@ Guidance for Claude Code (and anyone else) working in this repository.
   unrelated request's changes onto a branch created for a previous one. If a request's PR has already been
   merged, restart from the latest `main`.
 * **Open a pull request when the work is done**, against `main`, summarizing what changed and why.
-* **Verify before opening the PR.** There is no CI yet, so run both locally:
+* **Verify before opening the PR.** CI (`.github/workflows/ci.yml`, `windows-latest`) runs the same two;
+  run them locally first:
   * `dotnet build MtgaDash.sln`
   * `dotnet test MtgaDash.sln` — the page's JavaScript tests need `node` on the PATH (Inconclusive otherwise)
 * **Add a line to `src/MtgaDash/wwwroot/updates.txt` when you ship a user-visible change.** Newest last;
@@ -19,8 +20,9 @@ Guidance for Claude Code (and anyone else) working in this repository.
 * **Never commit personal data.** Logs, the accounts CSV and the database hold the owner's email addresses;
   `testdata/`, `data/`, `logs/`, `export/`, `*.csv` and `*.db` are git-ignored for that reason. Test
   fixtures are synthetic (`tests/MtgaDash.Tests/Fixtures.cs`) and use `example.com` or made-up names.
-* **Post the links at the end of every response:** the repo, https://github.com/ClemL/Mtga-Dash. The app
-  runs only on the owner's PC (`http://localhost:5080`); there is no hosted app or pipeline.
+* **Post the links at the end of every response:** the repo, https://github.com/ClemL/Mtga-Dash, and the
+  pipeline, https://github.com/ClemL/Mtga-Dash/actions. The app runs only on the owner's PC
+  (`http://localhost:5080`); there is no hosted app.
 * **Comments explain *why*, not *what*.**
 
 ## What this project is
@@ -35,10 +37,13 @@ settings, publishing and the Task Scheduler setup.
 
 ```
 src/MtgaDash/
+  AppHost.cs    builds the app: DI, host filtering, every endpoint (Program.cs only calls it)
   Parsing/      LogParser (pure: lines in, typed events out), Json helpers
-  Ingestion/    LogIngestor (offsets, rotation, batching), IngestionService (poll loop), ChangeNotifier (SSE)
+  Ingestion/    LogIngestor (offsets, rotation, batching), IngestionService (poll loop), ChangeNotifier (SSE),
+                StatusTracker (Status tab)
   Data/         Database (schema + migrations), Writer (upserts, matching), Queries (read side)
-  Accounts/     AccountMatcher (pure), AccountsCsv, AccountExceptions (hand-edited overrides)
+  Accounts/     AccountMatcher (pure), AccountsCsv, AccountExceptions (compiled overrides),
+                ExceptionStore (Review-tab overrides in account-exceptions.json)
   Cards/        CardNames: optional card names from MTGA's own SQLite card DB, schema found at runtime
   Web/          PageRenderer (fills index.html placeholders), StaticExporter, DisplayOptions, BuildInfo
   wwwroot/      index.html (the whole UI), updates.txt (changelog)
@@ -52,8 +57,12 @@ tools/Register-MtgaDashTask.ps1   logon task for the published exe
   injected. Log-format changes belong there, with a test in `LogParserTests`.
 * **Every write is an idempotent upsert on a natural key.** Re-ingesting a file, or the live log and its
   archived copy, must change nothing. `IngestionTests.Dump` compares whole databases: use it for new tables.
-* **Matching is recomputed from scratch** (`Writer.RunMatching`) on startup, on import and when a new display
-  name appears. Exceptions are applied first, so nothing can overwrite them. Never store a match elsewhere.
+* **Matching is recomputed from scratch** (`Writer.RunMatching`) on startup, on import, when a new display
+  name appears and when a mapping changes. Exceptions (compiled ones overlaid by `ExceptionStore`'s file) are
+  applied first, so nothing can overwrite them. Pass the store to every `RunMatching` and `Review` call.
+* **Every state-changing endpoint goes in the `write` group in `AppHost`**, which requires the `X-MtgaDash: 1`
+  header, and the page sends it through `mutate()`. Never add a GET that changes state: another site can
+  trigger a GET with an image tag. `ApiTests` covers both rules.
 * **Schema changes are a new entry at the end of `Database.Migrations`.** Never edit an applied migration:
   existing databases on the owner's PC would not get the change.
 * **The page builds DOM with `h()` and `textContent`, never `innerHTML`.** Notes, emails and deck names come
@@ -92,6 +101,10 @@ parameter in a query record throws at runtime (`DeckRow.IsPrecon` is `long` for 
 **`request` in a client request line is JSON inside a JSON string, sometimes encoded twice.** Use
 `Json.Unwrap`, which re-parses until the value is no longer a string.
 
+**Host filtering reads `AllowedHosts` from configuration.** `AppHost` sets it to the loopback names unless
+`AllowLan` is on; a request with any other `Host` gets 400. Tests must address the app as `127.0.0.1`
+(port 0 binds there, because Kestrel cannot pick a free port for `localhost`).
+
 **`nuget.config` must keep `<clear />`.** The owner's global config has a private Azure Artifacts feed that
 answers 401 and breaks restores.
 
@@ -99,10 +112,10 @@ answers 401 and breaks restores.
 
 ```bash
 dotnet build MtgaDash.sln   # compiles both projects
-dotnet test MtgaDash.sln    # parser, ingestion, matching, CSV, card names, page JS (via node)
+dotnet test MtgaDash.sln    # parser, ingestion, matching, CSV, card names, HTTP API, page JS (via node)
 ```
 
-`RealLogTests` read `testdata/Player.log`, `testdata/Player-prev.log` and the accounts CSV when present and
+`ApiTests` start the real app on a free port against a temp folder. `RealLogTests` read `testdata/Player.log`, `testdata/Player-prev.log` and the accounts CSV when present and
 are Inconclusive otherwise. Check UI changes in a real browser at desktop width and at 390 px wide in every
 theme: no sideways page scroll, tables scroll inside themselves.
 

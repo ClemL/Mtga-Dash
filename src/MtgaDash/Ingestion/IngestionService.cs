@@ -9,6 +9,8 @@ public sealed class IngestionService(
     Database db,
     LogIngestor ingestor,
     ChangeNotifier notifier,
+    ExceptionStore exceptions,
+    StatusTracker status,
     ILogger<IngestionService> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -36,7 +38,7 @@ public sealed class IngestionService(
         // Matching runs on every start, because the exception map is compiled in and may have changed;
         // an import runs it itself.
         if (empty && ImportAccounts(notify: false) > 0) return;
-        LogMatching(Writer.RunMatching(c));
+        LogMatching(Writer.RunMatching(c, exceptions));
     }
 
     public int ImportAccounts(bool notify = true)
@@ -51,7 +53,7 @@ public sealed class IngestionService(
         using var c = db.Open();
         var n = Writer.ImportAccounts(c, rows);
         logger.LogInformation("Imported {Count} accounts from {Path}", n, path);
-        LogMatching(Writer.RunMatching(c));
+        LogMatching(Writer.RunMatching(c, exceptions));
         if (notify) notifier.Notify();
         return n;
     }
@@ -73,31 +75,45 @@ public sealed class IngestionService(
             yield return live;
     }
 
+    /// <summary>Re-runs matching after an exception mapping changed, and tells open pages.</summary>
+    public void Rematch()
+    {
+        using var c = db.Open();
+        LogMatching(Writer.RunMatching(c, exceptions));
+        notifier.Notify();
+    }
+
     public void PollOnce()
     {
+        var started = System.Diagnostics.Stopwatch.GetTimestamp();
+        var polled = new List<string>();
         var changed = false;
         var newPlayers = 0;
         var files = 0;
         foreach (var file in Files())
         {
             files++;
+            polled.Add(file);
             try
             {
                 var r = ingestor.IngestFile(file);
+                status.FileError(file, null);
                 changed |= r.Counts.Any || r.Restarted;
                 newPlayers += r.Counts.NewPlayers;
             }
             catch (IOException ex)
             {
                 logger.LogWarning("{Path}: {Message}; retrying next poll", file, ex.Message);
+                status.FileError(file, ex.Message);
             }
         }
         logger.LogDebug("Scanned {Files} log files", files);
         if (newPlayers > 0)
         {
             using var c = db.Open();
-            LogMatching(Writer.RunMatching(c));
+            LogMatching(Writer.RunMatching(c, exceptions));
         }
+        status.Polled(polled, System.Diagnostics.Stopwatch.GetElapsedTime(started));
         if (changed) notifier.Notify();
     }
 }

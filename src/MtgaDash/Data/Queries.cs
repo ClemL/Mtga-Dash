@@ -43,10 +43,12 @@ public sealed record AmbiguousPlayer(string DisplayName, string? LastLoginUtc, I
 
 public sealed record StatusMismatch(string Email, string? DisplayName, string? Status, long CustomDeckCount, long? WcRare, long? WcMythic);
 
-public sealed record Review(IReadOnlyList<UnmatchedPlayer> Unmatched, IReadOnlyList<AmbiguousPlayer> Ambiguous, IReadOnlyList<StatusMismatch> StatusMismatches);
+public sealed record MappingRow(string DisplayName, string Email, string Source, bool PlayerSeen, bool AccountExists);
+
+public sealed record Review(IReadOnlyList<UnmatchedPlayer> Unmatched, IReadOnlyList<AmbiguousPlayer> Ambiguous, IReadOnlyList<StatusMismatch> StatusMismatches, IReadOnlyList<MappingRow> Mappings);
 
 /// <summary>Read side of the API. Every query is plain SQL against the schema in <see cref="Database"/>.</summary>
-public sealed partial class Queries(Database db, Cards.CardNames? cards = null)
+public sealed partial class Queries(Database db, Cards.CardNames? cards = null, ExceptionStore? exceptions = null)
 {
     public IReadOnlyList<AccountLatest> Accounts(string? search = null, string? status = null, bool? stale = null, int staleDays = 30, DateTime? nowUtc = null)
     {
@@ -148,7 +150,8 @@ public sealed partial class Queries(Database db, Cards.CardNames? cards = null)
         var emails = c.Query<string>("SELECT Email FROM Accounts").ToList();
         var players = c.Query<(string DisplayName, string? LastLoginUtc)>("SELECT DisplayName, LastLoginUtc FROM Players ORDER BY LastLoginUtc DESC").ToList();
         var lastLogin = players.ToDictionary(p => p.DisplayName, p => p.LastLoginUtc);
-        var match = AccountMatcher.Match(emails, players.Select(p => p.DisplayName));
+        var (map, excluded) = exceptions?.Current() ?? (AccountExceptions.DisplayNameToEmail, AccountExceptions.ExcludedEmails);
+        var match = AccountMatcher.Match(emails, players.Select(p => p.DisplayName), map, excluded);
 
         var unmatched = match.Players.Where(p => p.State == MatchStates.Unmatched)
             .Select(p => new UnmatchedPlayer(p.DisplayName, lastLogin.GetValueOrDefault(p.DisplayName),
@@ -163,7 +166,12 @@ public sealed partial class Queries(Database db, Cards.CardNames? cards = null)
                 && (a.CustomDeckCount > 0 || (a.WcRare ?? 0) > 0 || (a.WcMythic ?? 0) > 0))
             .Select(a => new StatusMismatch(a.Email, a.DisplayName, a.Status, a.CustomDeckCount, a.WcRare, a.WcMythic))
             .ToList();
-        return new Review(unmatched, ambiguous, mismatches);
+        var lookup = match.Players.ToDictionary(p => p.DisplayName, StringComparer.OrdinalIgnoreCase);
+        var mappings = (exceptions?.Mappings() ?? AccountExceptions.DisplayNameToEmail.Select(kv => new ExceptionMapping(kv.Key, kv.Value, "code")).ToList())
+            .Select(m => new MappingRow(m.DisplayName, m.Email, m.Source, lookup.ContainsKey(m.DisplayName),
+                emails.Contains(m.Email, StringComparer.OrdinalIgnoreCase)))
+            .ToList();
+        return new Review(unmatched, ambiguous, mismatches, mappings);
     }
 
     public IReadOnlyList<string> Statuses()

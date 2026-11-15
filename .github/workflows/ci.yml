@@ -1,0 +1,42 @@
+# Builds and tests on Windows, where the app runs: the Windows-only paths (service hosting, file sharing
+# with MTGA, %USERPROFILE%) are only exercised there. Node runs the page's JavaScript tests.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Restore
+        run: dotnet restore MtgaDash.sln
+
+      - name: Build
+        run: dotnet build MtgaDash.sln --no-restore -c Release
+
+      - name: Test
+        run: dotnet test MtgaDash.sln --no-build -c Release --logger "trx;LogFileName=results.trx" --results-directory TestResults
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: TestResults/*.trx

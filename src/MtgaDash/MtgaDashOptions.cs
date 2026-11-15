@@ -22,6 +22,12 @@ public sealed class MtgaDashOptions
     /// </summary>
     public string CardDbPath { get; set; } = "";
 
+    /// <summary>
+    /// Where Review-tab exception mappings are saved. Empty means <c>account-exceptions.json</c> beside the
+    /// database, outside the publish folder so republishing cannot erase it.
+    /// </summary>
+    public string ExceptionsPath { get; set; } = "";
+
     /// <summary>Expands environment variables and makes the path absolute. Empty stays empty.</summary>
     public static string Resolve(string path)
     {

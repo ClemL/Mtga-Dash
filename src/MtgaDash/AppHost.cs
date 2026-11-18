@@ -98,6 +98,8 @@ public static class AppHost
         api.MapGet("/totals", (Queries q) => q.Totals());
         api.MapGet("/review", (Queries q) => q.Review());
         api.MapGet("/statuses", (Queries q) => q.Statuses());
+        api.MapGet("/cards", (Queries q, int? minCopies, string? rarity) =>
+            q.Cards(Math.Clamp(minCopies ?? 3, 1, 99), rarity?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)));
         api.MapGet("/status", (StatusTracker s) => s.Snapshot());
         api.MapGet("/activity", (ActivityLog a, Queries q) => new { entries = a.Entries(), messages = a.Messages(), players = q.Players() });
         // Only a file the app already reads can be tailed, so the name cannot be used to read anything else.

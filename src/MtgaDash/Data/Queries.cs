@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Dapper;
 using MtgaDash.Accounts;
+using MtgaDash.Cards;
 
 namespace MtgaDash.Data;
 
@@ -28,7 +29,20 @@ public sealed record AccountDetail(
     IReadOnlyList<DeckRow> CustomDecks,
     int PreconCount,
     IReadOnlyList<RankRow> Ranks,
-    IReadOnlyDictionary<int, string> CardNames);
+    IReadOnlyDictionary<int, string> CardNames,
+    IReadOnlyList<OwnedCard> KnownCards,
+    bool CardRarityKnown);
+
+/// <summary>A card known to be owned (from saved decks), with what the card database says about it.</summary>
+public sealed record OwnedCard(int CardId, int Copies, int Decks, IReadOnlyList<string> DeckNames, string? Name, string? Rarity, string? Set);
+
+public sealed record CardHolder(string? Email, string DisplayName, int Copies);
+
+public sealed record CardAcrossAccounts(int CardId, string? Name, string? Rarity, string? Set, IReadOnlyList<CardHolder> Holders);
+
+public sealed record CardsReport(
+    bool RarityKnown, string? CardDbStatus, int MinCopies, IReadOnlyList<string> Rarities,
+    IReadOnlyList<CardAcrossAccounts> Cards, IReadOnlyDictionary<string, int> PerAccount, int AccountsWithDecks);
 
 public sealed record SetTotal(string SetCode, long Count, long Accounts);
 
@@ -99,7 +113,66 @@ public sealed partial class Queries(Database db, Cards.CardNames? cards = null, 
             new { name }).ToList();
         var custom = decks.Where(d => d.IsPrecon == 0).ToList();
         var names = cards?.Lookup(custom.SelectMany(d => CardIds(d.CardsJson))) ?? new Dictionary<int, string>();
-        return new AccountDetail(a, snaps, boosters, custom, decks.Count - custom.Count, ranks, names);
+        var known = name is null ? [] : KnownCollection.For(SavedDecks(c, name));
+        var info = cards?.Info(known.Select(k => k.CardId)) ?? new Dictionary<int, CardInfo>();
+        var owned = known.Select(k => ToOwned(k, info)).ToList();
+        return new AccountDetail(a, snaps, boosters, custom, decks.Count - custom.Count, ranks, names, owned, cards?.HasRarity ?? false);
+    }
+
+    private static OwnedCard ToOwned(KnownCard k, IReadOnlyDictionary<int, CardInfo> info)
+    {
+        var i = info.GetValueOrDefault(k.CardId);
+        return new OwnedCard(k.CardId, k.Copies, k.Decks, k.DeckNames, i?.Name, i?.Rarity, i?.Set);
+    }
+
+    /// <summary>Every saved version of every deck, with the deck's current name for display.</summary>
+    private static IEnumerable<SavedDeck> SavedDecks(Microsoft.Data.Sqlite.SqliteConnection c, string? displayName = null) =>
+        c.Query<SavedDeck>($"""
+            SELECT l.DisplayName, l.DeckId, d.Name AS DeckName, l.CardsJson
+            FROM DeckLists l LEFT JOIN Decks d ON d.DisplayName = l.DisplayName AND d.DeckId = l.DeckId
+            {(displayName is null ? "" : "WHERE l.DisplayName = @displayName")}
+            """, new { displayName });
+
+    public static readonly string[] DefaultRarities = ["mythic", "rare"];
+
+    /// <summary>
+    /// Cards held at <paramref name="minCopies"/> or more, across accounts, filtered by rarity when the card
+    /// database gives one. Without rarities the filter cannot apply, so every card qualifies.
+    /// </summary>
+    public CardsReport Cards(int minCopies = 3, IReadOnlyList<string>? rarities = null)
+    {
+        rarities = rarities is { Count: > 0 } ? rarities.Select(r => r.ToLowerInvariant()).ToList() : DefaultRarities;
+        using var c = db.Open();
+        var byAccount = KnownCollection.ByAccount(SavedDecks(c));
+        var emails = c.Query<(string DisplayName, string? Email)>("SELECT DisplayName, Email FROM Players").ToDictionary(p => p.DisplayName, p => p.Email);
+        var info = cards?.Info(byAccount.Values.SelectMany(l => l.Select(k => k.CardId)).Distinct()) ?? new Dictionary<int, CardInfo>();
+        var rarityKnown = cards?.HasRarity ?? false;
+
+        bool Wanted(KnownCard k) => k.Copies >= minCopies
+            && (!rarityKnown || info.GetValueOrDefault(k.CardId)?.Rarity is { } r && rarities.Contains(r));
+
+        var perAccount = new Dictionary<string, int>(StringComparer.Ordinal);
+        var holders = new Dictionary<int, List<CardHolder>>();
+        foreach (var (name, known) in byAccount)
+        {
+            var hits = known.Where(Wanted).ToList();
+            perAccount[name] = hits.Count;
+            foreach (var k in hits)
+            {
+                if (!holders.TryGetValue(k.CardId, out var list)) holders[k.CardId] = list = [];
+                list.Add(new CardHolder(emails.GetValueOrDefault(name), name, k.Copies));
+            }
+        }
+        var report = holders
+            .Select(kv =>
+            {
+                var i = info.GetValueOrDefault(kv.Key);
+                return new CardAcrossAccounts(kv.Key, i?.Name, i?.Rarity, i?.Set,
+                    kv.Value.OrderByDescending(h => h.Copies).ThenBy(h => h.DisplayName, StringComparer.OrdinalIgnoreCase).ToList());
+            })
+            .OrderByDescending(x => x.Holders.Count).ThenBy(x => x.Name ?? "~").ThenBy(x => x.CardId)
+            .ToList();
+        return new CardsReport(rarityKnown, cards?.Status, minCopies, rarities, report, perAccount, byAccount.Count);
     }
 
     private static IEnumerable<int> CardIds(string? cardsJson)

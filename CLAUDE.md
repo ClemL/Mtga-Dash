@@ -44,7 +44,8 @@ src/MtgaDash/
   Data/         Database (schema + migrations), Writer (upserts, matching), Queries (read side)
   Accounts/     AccountMatcher (pure), AccountsCsv, AccountExceptions (compiled overrides),
                 ExceptionStore (Review-tab overrides in account-exceptions.json)
-  Cards/        CardNames: optional card names from MTGA's own SQLite card DB, schema found at runtime
+  Cards/        CardNames: optional names, rarity and set from MTGA's own SQLite card DB, schema found at
+                runtime; KnownCollection (pure): cards owned, as a minimum, from saved deck lists
   Web/          PageRenderer (fills index.html placeholders), StaticExporter, DisplayOptions, BuildInfo
   wwwroot/      index.html (the whole UI), updates.txt (changelog)
 tests/MtgaDash.Tests/   MSTest; Fixtures.cs builds synthetic logs
@@ -57,6 +58,9 @@ tools/Register-MtgaDashTask.ps1   logon task for the published exe
   injected. Log-format changes belong there, with a test in `LogParserTests`.
 * **The parser reports every message, read or not** (`MessageSeen`), so the Activity tab shows what MTGA
   writes. When you add support for a message, check its Activity row turns from "not read" to read.
+* **Owned counts are a minimum, from saved decks.** `KnownCollection` takes the most copies in any one deck
+  version, never a sum across decks. MTGA's rarity numbers are mapped in `CardNames.RarityName`; an
+  unknown value stays null rather than guessed.
 * **Every write is an idempotent upsert on a natural key.** Re-ingesting a file, or the live log and its
   archived copy, must change nothing. `IngestionTests.Dump` compares whole databases: use it for new tables.
 * **Matching is recomputed from scratch** (`Writer.RunMatching`) on startup, on import, when a new display

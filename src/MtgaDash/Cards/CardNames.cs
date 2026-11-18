@@ -3,17 +3,20 @@ using Microsoft.Data.Sqlite;
 
 namespace MtgaDash.Cards;
 
+/// <summary>What MTGA's card database says about one card. Any field it could not resolve is null.</summary>
+public sealed record CardInfo(string? Name, string? Rarity, string? Set);
+
 /// <summary>
-/// Optional card names from MTGA's own card database. Its schema is not documented and changes between
-/// client versions, so nothing about it is assumed: the tables are inspected at runtime for a card table
-/// (a grpId and a title id) and an English localization table (a loc id and text). If either cannot be
-/// found, names stay off and the reason is logged; the dashboard then shows card ids alone.
+/// Optional card names, rarities and sets from MTGA's own card database. Its schema is not documented and
+/// changes between client versions, so nothing about it is assumed: the tables are inspected at runtime for a
+/// card table (a grpId and a title id) and an English localization table (a loc id and text). If either cannot
+/// be found, card data stays off and the reason is logged; the dashboard then shows card ids alone.
 /// </summary>
 public sealed class CardNames
 {
     private readonly ILogger _logger;
     private readonly string _pattern;
-    private Dictionary<int, string>? _names;
+    private Dictionary<int, CardInfo>? _cards;
     private string? _loadedFrom;
 
     public CardNames(string pathOrPattern, ILogger logger)
@@ -24,17 +27,23 @@ public sealed class CardNames
 
     public string? Status { get; private set; }
 
-    public IReadOnlyDictionary<int, string> Lookup(IEnumerable<int> ids)
+    /// <summary>Whether rarities are known, so the page can say why it cannot filter by rarity.</summary>
+    public bool HasRarity => Load() is { } c && c.Values.Any(i => i.Rarity is not null);
+
+    public IReadOnlyDictionary<int, string> Lookup(IEnumerable<int> ids) =>
+        Info(ids).Where(kv => kv.Value.Name is not null).ToDictionary(kv => kv.Key, kv => kv.Value.Name!);
+
+    public IReadOnlyDictionary<int, CardInfo> Info(IEnumerable<int> ids)
     {
-        var names = Load();
-        var result = new Dictionary<int, string>();
-        if (names is null) return result;
+        var cards = Load();
+        var result = new Dictionary<int, CardInfo>();
+        if (cards is null) return result;
         foreach (var id in ids)
-            if (names.TryGetValue(id, out var n)) result[id] = n;
+            if (cards.TryGetValue(id, out var c)) result[id] = c;
         return result;
     }
 
-    private Dictionary<int, string>? Load()
+    private Dictionary<int, CardInfo>? Load()
     {
         if (string.IsNullOrWhiteSpace(_pattern)) return null;
         var path = Resolve(_pattern);
@@ -43,27 +52,27 @@ public sealed class CardNames
             SetStatus($"no card database matches {_pattern}");
             return null;
         }
-        if (path == _loadedFrom) return _names;
+        if (path == _loadedFrom) return _cards;
 
         _loadedFrom = path;
-        _names = null;
+        _cards = null;
         try
         {
-            _names = Read(path, out var description);
-            SetStatus($"{_names.Count:N0} card names from {Path.GetFileName(path)} ({description})");
+            _cards = Read(path, out var description);
+            SetStatus($"{_cards.Count:N0} cards from {Path.GetFileName(path)} ({description})");
         }
         catch (Exception ex) when (ex is SqliteException or InvalidDataException or IOException)
         {
-            SetStatus($"card names unavailable from {path}: {ex.Message}");
+            SetStatus($"card data unavailable from {path}: {ex.Message}");
         }
-        return _names;
+        return _cards;
     }
 
     private void SetStatus(string status)
     {
         if (status == Status) return;
         Status = status;
-        _logger.LogInformation("Card names: {Status}", status);
+        _logger.LogInformation("Card database: {Status}", status);
     }
 
     /// <summary>A literal path, or a folder plus a wildcard file name; the newest match wins.</summary>
@@ -77,7 +86,29 @@ public sealed class CardNames
             .OrderByDescending(f => f.LastWriteTimeUtc).FirstOrDefault()?.FullName;
     }
 
-    internal static Dictionary<int, string> Read(string path, out string description)
+    /// <summary>
+    /// MTGA stores rarity as a small number. The mapping below (1 basic land … 5 mythic) is the order the client
+    /// uses in its card data; text values ("Mythic") are accepted too. Anything else stays null rather than guessed.
+    /// </summary>
+    internal static string? RarityName(object? value) => value switch
+    {
+        null => null,
+        long n => n switch { 0 => "token", 1 => "land", 2 => "common", 3 => "uncommon", 4 => "rare", 5 => "mythic", _ => null },
+        string s when long.TryParse(s, out var n) => RarityName(n),
+        string s => s.Trim().ToLowerInvariant() switch
+        {
+            "mythic" or "mythicrare" or "mythic rare" => "mythic",
+            "rare" => "rare",
+            "uncommon" => "uncommon",
+            "common" => "common",
+            "basicland" or "basic land" or "land" => "land",
+            "token" => "token",
+            _ => null,
+        },
+        _ => null,
+    };
+
+    internal static Dictionary<int, CardInfo> Read(string path, out string description)
     {
         var cs = new SqliteConnectionStringBuilder { DataSource = path, Mode = SqliteOpenMode.ReadOnly, Pooling = false }.ToString();
         using var c = new SqliteConnection(cs);
@@ -95,6 +126,8 @@ public sealed class CardNames
             .OrderByDescending(x => string.Equals(x.Table, "Cards", StringComparison.OrdinalIgnoreCase))
             .FirstOrDefault();
         if (cardTable.Table is null) throw new InvalidDataException($"no table with GrpId and TitleId columns (tables: {string.Join(", ", tables)})");
+        var rarityCol = Col(cardTable.Table, "Rarity");
+        var setCol = Col(cardTable.Table, "ExpansionCode", "Set", "SetCode");
 
         // English text lives either in a per-language table (Localizations_enUS with a Loc column) or in an
         // enUS column of a shared table.
@@ -106,17 +139,34 @@ public sealed class CardNames
             .FirstOrDefault();
         if (locTable.Table is null) throw new InvalidDataException($"no localization table with a loc id and English text (tables: {string.Join(", ", tables)})");
 
-        // Several formatted variants can share a loc id; the lowest Formatted value is the plain title.
-        var order = locTable.Formatted is not null ? $"l.\"{locTable.Formatted}\"" : "1";
+        // Several formatted variants can share a loc id; ordering by Formatted descending leaves the lowest,
+        // the plain title, as the last one written.
+        var order = locTable.Formatted is not null ? $"l.\"{locTable.Formatted}\" DESC" : "1";
+        var rarity = rarityCol is not null ? $"c.\"{rarityCol}\"" : "NULL";
+        var set = setCol is not null ? $"c.\"{setCol}\"" : "NULL";
         var sql = $"""
-            SELECT c."{cardTable.Grp}" AS Id, l."{locTable.Text}" AS Name
-            FROM "{cardTable.Table}" c JOIN "{locTable.Table}" l ON l."{locTable.Id}" = c."{cardTable.Title}"
-            ORDER BY {order} DESC
+            SELECT c."{cardTable.Grp}" AS Id, l."{locTable.Text}" AS Name, {rarity} AS Rarity, {set} AS SetCode
+            FROM "{cardTable.Table}" c LEFT JOIN "{locTable.Table}" l ON l."{locTable.Id}" = c."{cardTable.Title}"
+            ORDER BY {order}
             """;
-        var names = new Dictionary<int, string>();
-        foreach (var (id, name) in c.Query<(long, string?)>(sql))
-            if (!string.IsNullOrWhiteSpace(name)) names[(int)id] = name;
-        description = $"{cardTable.Table}.{cardTable.Grp} → {locTable.Table}.{locTable.Text}";
-        return names;
+        var cards = new Dictionary<int, CardInfo>();
+        using (var reader = c.ExecuteReader(sql))
+        {
+            while (reader.Read())
+            {
+                if (reader.IsDBNull(0)) continue;
+                var id = (int)reader.GetInt64(0);
+                var name = reader.IsDBNull(1) ? null : reader.GetString(1);
+                var info = new CardInfo(
+                    string.IsNullOrWhiteSpace(name) ? cards.GetValueOrDefault(id)?.Name : name,
+                    RarityName(reader.IsDBNull(2) ? null : reader.GetValue(2)),
+                    reader.IsDBNull(3) ? null : Convert.ToString(reader.GetValue(3), System.Globalization.CultureInfo.InvariantCulture));
+                cards[id] = info;
+            }
+        }
+        description = $"{cardTable.Table}.{cardTable.Grp} → {locTable.Table}.{locTable.Text}"
+            + (rarityCol is null ? ", no rarity column" : $", rarity from {rarityCol}")
+            + (setCol is null ? "" : $", set from {setCol}");
+        return cards;
     }
 }

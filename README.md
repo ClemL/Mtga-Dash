@@ -15,6 +15,7 @@ single-page dashboard on `http://localhost:5080` that updates live.
 - **Status**: when the last poll ran, how far each log file has been read, recent parse warnings, and a
   warning when MTGA is running with Detailed Logs off.
 - **Activity**: what the app found in the logs as you play, for troubleshooting; see below.
+- **Cards**: rares and mythics each account is known to own at 3+ copies, from its saved decks; see below.
 
 Everything runs offline: no npm, no CDN, no build step for the page.
 
@@ -188,6 +189,24 @@ The Activity tab (key `6`) shows what the app read, refreshed every 3 seconds wh
 
 The activity is kept in memory and starts empty when the app restarts. Nothing in it is written to disk.
 
+## Cards tab: rares and mythics owned at 3+ copies
+
+MTGA no longer writes the collection to its log, but it does log a deck's full card list each time you save
+the deck. A saved deck is taken as proof of ownership, so:
+
+- an account owns **at least** the most copies of a card that any single saved deck held (main deck,
+  sideboard, commander and companion added up; never summed across decks, which share copies);
+- every version of every deck counts, so cutting a card from a deck later does not lower the number;
+- cards never saved in a deck are missing: every number is a minimum.
+
+To record an account's cards, open each deck in MTGA's deck builder and press **Done**. The **Cards** tab
+(key `7`) lists each card held at the chosen copies by any account, with who holds it; the filter matches
+card, set or account. The **R/M 3+** column on the Accounts table counts them per account, and each
+account's detail page has a **Known cards** table.
+
+Rarity, card names and sets come from MTGA's card database: set `CardDbPath` (above). Without it, cards are
+listed by id, the rarity filter is off, and basic lands are included.
+
 ## Static export (phone, PC off)
 
 With `ExportFolder` set, 30 s after data changes the app writes:
@@ -208,7 +227,7 @@ applies the text as the Accounts filter, which the search box in the header then
 |---|---|
 | `Ctrl+K`, `/` | Open the palette on the current filter |
 | `Ctrl+Shift+P` | Open the palette empty |
-| `1` `2` `3` `4` `5` `6` | Accounts, Stale, Totals, Review, Status, Activity |
+| `1` … `7` | Accounts, Stale, Totals, Review, Status, Activity, Cards |
 | `Esc` | Back to Accounts from an account; closes any dialog |
 | `F` | Focus the table filter |
 | `R` | Refresh now |

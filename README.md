@@ -121,10 +121,26 @@ rules must never match on their own. An exception always beats the alias rules.
 
 ### Card names (optional)
 
-Set `CardDbPath` to MTGA's card database, for example
-`C:\Program Files\Wizards of the Coast\MTGA\MTGA_Data\Downloads\Raw\Raw_CardDatabase_*.mtga`. The wildcard
-picks the newest file. The schema is inspected at runtime for a card table (grpId and title id) and an
-English localization table; if it cannot be resolved, card ids are shown alone and the console says why.
+Logs name cards by id only (e.g. `92275`). MTGA ships its own card database, a SQLite file named
+`Raw_CardDatabase_<hash>.mtga` in `MTGA_Data\Downloads\Raw` under the install folder; `CardDbPath` points at
+it and turns ids into names, rarity and set.
+
+The easiest way: **Card names…** on the Cards tab (also on the Status tab, and `Ctrl+K` → "Set up card names").
+The dialog shows whether names are on, lists the card databases it finds in the usual install folders
+(MTGA's installer, Steam, Epic) with the number of cards each holds, gives the exact line to paste and the
+file to paste it in (`appsettings.Production.json` beside the exe), and looks up any card id to confirm.
+
+Manually: add to `appsettings.Production.json`
+
+```json
+{ "MtgaDash": { "CardDbPath": "C:\\Program Files\\Wizards of the Coast\\MTGA\\MTGA_Data\\Downloads\\Raw\\Raw_CardDatabase_*.mtga" } }
+```
+
+Usual install folders: `C:\Program Files\Wizards of the Coast\MTGA`, `C:\Program Files (x86)\Steam\steamapps\common\MTGA`,
+`C:\Program Files\Epic Games\MagicTheGathering`. Keep the `*`: the file name changes with every MTGA update,
+and the wildcard picks the newest. The file is reloaded on save, so no restart is needed. The schema is
+inspected at runtime for a card table (grpId and title id) and an English localization table; if it cannot be
+resolved, card ids are shown alone and the dialog says why.
 
 ## Updating
 

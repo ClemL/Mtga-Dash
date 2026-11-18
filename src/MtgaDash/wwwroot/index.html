@@ -220,6 +220,15 @@ kbd {
 .map-input { flex: 1 1 14em; min-width: 0; }
 /* A full install path in this message must wrap on a phone, not widen the page. */
 td.neg { color: var(--bad); font-weight: 600; }
+.setup h3 { margin: var(--section-gap) 0 var(--block); }
+.setup-on { color: var(--good); }
+.setup-off { color: var(--warn); }
+.setup .list-plain li { flex-wrap: wrap; }
+.wrap-code, .snippet { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: calc(12px * var(--text-scale)); overflow-wrap: anywhere; white-space: pre-wrap; min-width: 0; }
+.snippet { flex: 1 1 auto; margin: 0; background: var(--panel-2); padding: 6px 8px; border-radius: 4px; }
+.lookup-id { width: 9em; }
+/* The steps scroll inside the panel so its title and close button stay in view. */
+.setup { overflow-y: auto; min-height: 0; flex: 1 1 auto; }
 .queue .toolbar { margin-bottom: 4px; }
 .cannot-start { color: var(--warn); font-weight: 600; flex: 1 1 100%; min-width: 0; overflow-wrap: anywhere; }
 .pill.kind-inventory, .pill.kind-login { color: var(--good); border-color: var(--good); }
@@ -1075,6 +1084,9 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
       h("span", null, "Last poll ", h("strong", { text: P.relativeTime(s.lastPollUtc, now) || "not yet" }),
         s.lastPollUtc ? h("span", { class: "muted", text: " · took " + s.lastPollMs + " ms · every " + s.pollSeconds + " s" }) : null),
       h("button", { type: "button", onclick: refreshStatus, text: "Refresh" })));
+    view.appendChild(h("div", { class: "toolbar" },
+      h("span", null, "Card names: ", h("strong", { text: state.cards && state.cards.rarityKnown ? "on" : "off" })),
+      h("button", { type: "button", onclick: openCardDbSetup, text: state.cards && state.cards.rarityKnown ? "Check" : "Set up card names" })));
     var g = state.game;
     if (g) {
       view.appendChild(h("div", { class: "toolbar" },
@@ -1198,8 +1210,83 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
   function rarityPill(r) { return r ? h("span", { class: "pill rarity-" + r, text: r }) : h("span", { class: "muted", text: "?" }); }
   function cardDbNotice(rarityKnown, status) {
     if (rarityKnown) return null;
-    return h("p", { class: "notice", text: "Rarity and card names need MTGA's card database: set CardDbPath (see README). Until then every card is listed by id, basic lands included."
-      + (status ? " Card database: " + status + "." : "") });
+    return h("p", { class: "notice" },
+      "Rarity and card names need MTGA's card database. Until it is set up every card is listed by id, basic lands included."
+        + (status ? " Card database: " + status + "." : "") + " ",
+      READ_ONLY ? null : h("button", { type: "button", onclick: openCardDbSetup, text: "Set up card names" }));
+  }
+
+  // ---------- Card names setup dialog ----------
+
+  function jsonPath(p) { return JSON.stringify({ MtgaDash: { CardDbPath: p } }, null, 2); }
+
+  function openCardDbSetup() {
+    if (READ_ONLY) return;
+    var body = h("div", { class: "setup" }, h("p", { class: "muted", text: "Checking this PC…" }));
+    openDialog("Set up card names", body);
+    function fill() {
+      api("/api/carddb").then(function (d) {
+        renderCardDbSetup(body, d);
+        // Names just came on: refresh the Cards data behind the dialog so ids turn into names there too.
+        if (d.state.cards > 0 && !(state.cards && state.cards.rarityKnown)) loadCards();
+      }, function (e) {
+        body.replaceChildren(h("p", { class: "notice", text: "Could not read the card database status: " + e.message }));
+      });
+    }
+    fill();
+    body.addEventListener("recheck", fill);
+  }
+
+  function renderCardDbSetup(body, d) {
+    var st = d.state;
+    var on = st.cards > 0;
+    var example = d.candidates.length ? d.candidates[0].pattern : "C:\\Program Files\\Wizards of the Coast\\MTGA\\MTGA_Data\\Downloads\\Raw\\Raw_CardDatabase_*.mtga";
+    var snippet = jsonPath(example);
+    var lookupInput = h("input", { type: "text", inputmode: "numeric", value: "92275", "aria-label": "Card id", class: "lookup-id" });
+    var lookupOut = h("span", { class: "muted", "aria-live": "polite" });
+    function lookup() {
+      var ids = lookupInput.value.replace(/[^0-9,]/g, "");
+      if (!ids) return;
+      api("/api/carddb/lookup?ids=" + encodeURIComponent(ids)).then(function (r) {
+        lookupOut.textContent = Object.keys(r).map(function (id) {
+          var c = r[id];
+          return id + " → " + (c && c.name ? c.name + (c.rarity ? " (" + c.rarity + (c.set ? ", " + c.set : "") + ")" : "") : "not found");
+        }).join("; ") || "No ids.";
+      });
+    }
+    body.replaceChildren(
+      h("p", { class: on ? "setup-on" : "setup-off" },
+        h("strong", { text: on ? "Card names are on. " : "Card names are off. " }),
+        on ? fmt(st.cards) + " cards from " + st.resolvedPath + (st.rarityKnown ? ", with rarity." : ", but no rarity column was found.")
+           : (st.status ? "Reason: " + st.status + "." : "")),
+
+      h("h3", { text: "1. Find MTGA's card database" }),
+      d.candidates.length
+        ? h("ul", { class: "list-plain" }, d.candidates.map(function (c) {
+            return h("li", null,
+              h("span", { class: c.ok ? "pill kind-inventory" : "pill kind-warning", text: c.ok ? fmt(c.cards) + " cards" : "unreadable" }),
+              h("code", { class: "wrap-code", text: c.file }),
+              c.ok ? null : h("span", { class: "muted", text: c.message }));
+          }))
+        : h("p", { class: "muted", text: "None found in the usual install folders. In File Explorer, open the folder MTGA is installed in, then MTGA_Data\\Downloads\\Raw, and look for Raw_CardDatabase_ followed by letters and digits, ending .mtga." }),
+      h("p", { class: "muted", text: "Usual folders: C:\\Program Files\\Wizards of the Coast\\MTGA (MTGA's own installer), C:\\Program Files (x86)\\Steam\\steamapps\\common\\MTGA (Steam), C:\\Program Files\\Epic Games\\MagicTheGathering (Epic). The file name changes with every MTGA update, so the setting uses * in its place." }),
+
+      h("h3", { text: "2. Add the setting" }),
+      h("p", null, "Open this file in Notepad (create it if it does not exist): "),
+      codeLine(d.settingsFile),
+      h("p", null, "Paste this, or if the file already has a \"MtgaDash\" section, add only the CardDbPath line inside it:"),
+      h("div", { class: "code-line" }, h("pre", { class: "snippet", text: snippet }),
+        h("button", { type: "button", onclick: function (e) { copyText(snippet, e.currentTarget); }, text: "Copy" })),
+      h("p", { class: "muted", text: "In this file every backslash is written twice, as above." }),
+
+      h("h3", { text: "3. Save, then check" }),
+      h("p", { class: "muted", text: "The app reloads the file on save: no restart needed. Names appear within a few seconds, here and on the Cards tab." }),
+      h("div", { class: "toolbar" },
+        h("button", { type: "button", onclick: function () { body.dispatchEvent(new Event("recheck")); }, text: "Check again" })),
+
+      h("h3", { text: "Look up a card id" }),
+      h("form", { class: "toolbar", onsubmit: function (e) { e.preventDefault(); lookup(); } },
+        lookupInput, h("button", { type: "submit", text: "Look up" }), lookupOut));
   }
 
   function renderCards(view) {
@@ -1231,6 +1318,7 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
     var c = state.cards;
     view.appendChild(h("p", { class: "muted", text: "Cards each account is known to own, from every deck it ever saved: a deck with 4 copies proves at least 4. Cards never saved in a deck are not counted, so every number is a minimum." }));
     var controls = h("div", { class: "toolbar" },
+      READ_ONLY ? null : h("button", { type: "button", onclick: openCardDbSetup, title: "Set up or check card names", text: "Card names…" }),
       h("input", { type: "search", id: "cards-filter", placeholder: "Filter by card, set or account…", "aria-label": "Filter cards", value: state.cardsSearch,
         oninput: function (e) { state.cardsSearch = e.target.value; render(); } }),
       h("label", null, "At least",
@@ -1730,6 +1818,7 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
     CFG.themes.forEach(function (t) { cmds.push({ id: "theme-" + t.id, group: "Settings", label: "Theme: " + t.label + (display.theme === t.id ? " (in use)" : ""), disabled: display.theme === t.id, run: function () { chooseTheme(t.id); } }); });
     CFG.densities.forEach(function (d) { cmds.push({ id: "density-" + d.id, group: "Settings", label: "Density: " + d.label + (display.density === d.id ? " (in use)" : ""), disabled: display.density === d.id, run: function () { chooseDensity(d.id); } }); });
     CFG.textSizes.forEach(function (t) { cmds.push({ id: "text-" + t.id, group: "Settings", label: "Text size: " + t.label + (display.text === t.id ? " (in use)" : ""), disabled: display.text === t.id, run: function () { chooseText(t.id); } }); });
+    cmds.push({ id: "carddb-setup", group: "Cards", label: "Set up card names (CardDbPath)", disabled: READ_ONLY, run: openCardDbSetup });
     cmds.push({ id: "game-launch", group: "Game", label: state.game && state.game.running ? "Start MTGA (already running)" : "Start MTGA",
       disabled: READ_ONLY || !state.game || state.game.running || !state.game.canLaunch, run: launchGame });
     cmds.push({ id: "status-refresh", group: "Status", label: "Refresh ingestion status", disabled: READ_ONLY, run: refreshStatus });

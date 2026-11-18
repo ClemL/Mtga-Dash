@@ -63,6 +63,8 @@ tools/Update-MtgaDash.ps1         stop, pull, publish, start
   than the one that last set it (`SourceLine`), like every other update; never add a delta without that guard.
 * **The parser reports every message, read or not** (`MessageSeen`), so the Activity tab shows what MTGA
   writes. When you add support for a message, check its Activity row turns from "not read" to read.
+* **`CardDbPath` is read from configuration on every lookup**, not from the startup options, so saving it in
+  `appsettings.Production.json` applies without a restart (ASP.NET reloads that file). Keep it that way.
 * **Owned counts are a minimum, from saved decks.** `KnownCollection` takes the most copies in any one deck
   version, never a sum across decks. MTGA's rarity numbers are mapped in `CardNames.RarityName`; an
   unknown value stays null rather than guessed.

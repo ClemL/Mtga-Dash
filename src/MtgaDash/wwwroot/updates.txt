@@ -24,3 +24,4 @@
 2026-11-18T05:54:00Z - The Review tab lists large inventory drops between snapshots
 2026-11-18T05:54:00Z - The Activity tab keeps the last 24 hours across restarts, and a restart after a crash no longer opens another browser tab
 2026-11-18T05:54:00Z - Fixed the Review and Totals tabs failing on a new, empty database
+2026-11-18T05:59:00Z - Card names… on the Cards tab sets up card names step by step: finds MTGA's card database, gives the line to paste, applies it without a restart, and looks up any card id

@@ -179,6 +179,18 @@ public sealed class ApiTests
     }
 
     [TestMethod]
+    public async Task Card_database_setup_reports_its_state_and_where_the_setting_goes()
+    {
+        var d = await _http.GetFromJsonAsync<JsonElement>("/api/carddb");
+        Assert.AreEqual(0, d.GetProperty("state").GetProperty("cards").GetInt32());
+        StringAssert.Contains(d.GetProperty("state").GetProperty("status").GetString(), "not set");
+        StringAssert.EndsWith(d.GetProperty("settingsFile").GetString(), ".json");
+        var lookup = await _http.GetFromJsonAsync<JsonElement>("/api/carddb/lookup?ids=92275,abc");
+        Assert.AreEqual(JsonValueKind.Null, lookup.GetProperty("92275").ValueKind);
+        Assert.IsFalse(lookup.TryGetProperty("abc", out _));
+    }
+
+    [TestMethod]
     public async Task The_page_is_served_with_the_boot_script_and_config()
     {
         var html = await _http.GetStringAsync("/");

@@ -63,6 +63,53 @@ public sealed class CardNamesTests
     {
         var names = new CardNames("", NullLogger.Instance);
         Assert.AreEqual(0, names.Lookup([1]).Count);
-        Assert.IsNull(names.Status);
+        Assert.AreEqual("CardDbPath is not set", names.Status);
+    }
+
+    [TestMethod]
+    public void A_setting_saved_while_running_applies_without_a_restart()
+    {
+        using var t = new TempDb();
+        var path = MakeDb(t.Folder, """
+            CREATE TABLE Cards(GrpId INTEGER, TitleId INTEGER);
+            CREATE TABLE Localizations_enUS(LocId INTEGER, Formatted INTEGER, Loc TEXT);
+            INSERT INTO Cards VALUES (92275, 1);
+            INSERT INTO Localizations_enUS VALUES (1, 0, 'Test Card');
+            """);
+        var setting = "";
+        var names = new CardNames(() => setting, NullLogger.Instance);
+        Assert.AreEqual(0, names.State().Cards);
+        setting = Path.Combine(t.Folder, "Raw_CardDatabase_*.mtga");
+        Assert.AreEqual("Test Card", names.Lookup([92275])[92275]);
+        var state = names.State();
+        Assert.AreEqual((1, path), (state.Cards, state.ResolvedPath));
+        setting = "";
+        Assert.AreEqual(0, names.Lookup([92275]).Count, "removing the setting turns names off again");
+    }
+
+    [TestMethod]
+    public void Card_databases_are_found_in_install_folders_and_tested()
+    {
+        using var t = new TempDb();
+        var good = Directory.CreateDirectory(Path.Combine(t.Folder, "Wizards", "MTGA_Data", "Downloads", "Raw")).FullName;
+        MakeDb(good, "CREATE TABLE Cards(GrpId INTEGER, TitleId INTEGER); CREATE TABLE Localizations_enUS(LocId INTEGER, Loc TEXT); INSERT INTO Cards VALUES (1, 1); INSERT INTO Localizations_enUS VALUES (1, 'A');");
+        var bad = Directory.CreateDirectory(Path.Combine(t.Folder, "Steam", "MTGA_Data", "Downloads", "Raw")).FullName;
+        MakeDb(bad, "CREATE TABLE Other(Id INTEGER);");
+
+        var found = CardNames.FindCandidates([Path.Combine(t.Folder, "Wizards"), Path.Combine(t.Folder, "Steam"), Path.Combine(t.Folder, "Epic")]);
+        Assert.AreEqual(2, found.Count, "the folder without MTGA is skipped");
+        Assert.IsTrue(found[0].Ok);
+        Assert.AreEqual(1, found[0].Cards);
+        StringAssert.EndsWith(found[0].Pattern, "Raw_CardDatabase_*.mtga");
+        Assert.IsFalse(found[1].Ok);
+        StringAssert.Contains(found[1].Message, "no table with GrpId");
+    }
+
+    [TestMethod]
+    public void The_game_folder_and_program_files_are_searched()
+    {
+        var folders = CardNames.DefaultInstallFolders(@"D:\Games\MTGA\MTGA.exe").ToList();
+        Assert.IsTrue(folders.Count >= 1);
+        Assert.IsFalse(CardNames.DefaultInstallFolders("steam://rungameid/2141910").Any(f => f.Contains("steam:", StringComparison.Ordinal)));
     }
 }

@@ -219,6 +219,17 @@ kbd {
 .issue-line { color: var(--bad); font-weight: 600; }
 .map-input { flex: 1 1 14em; min-width: 0; }
 /* A full install path in this message must wrap on a phone, not widen the page. */
+td.neg { color: var(--bad); font-weight: 600; }
+.setup h3 { margin: var(--section-gap) 0 var(--block); }
+.setup-on { color: var(--good); }
+.setup-off { color: var(--warn); }
+.setup .list-plain li { flex-wrap: wrap; }
+.wrap-code, .snippet { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: calc(12px * var(--text-scale)); overflow-wrap: anywhere; white-space: pre-wrap; min-width: 0; }
+.snippet { flex: 1 1 auto; margin: 0; background: var(--panel-2); padding: 6px 8px; border-radius: 4px; }
+.lookup-id { width: 9em; }
+/* The steps scroll inside the panel so its title and close button stay in view. */
+.setup { overflow-y: auto; min-height: 0; flex: 1 1 auto; }
+.queue .toolbar { margin-bottom: 4px; }
 .cannot-start { color: var(--warn); font-weight: 600; flex: 1 1 100%; min-width: 0; overflow-wrap: anywhere; }
 .pill.kind-inventory, .pill.kind-login { color: var(--good); border-color: var(--good); }
 .pill.kind-not-read { color: var(--warn); border-color: var(--warn); font-weight: 600; }
@@ -731,7 +742,7 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
   }
   function reviewCount() {
     var r = state.data.review;
-    return r ? r.unmatched.length + r.ambiguous.length + r.statusMismatches.length : 0;
+    return r ? r.unmatched.length + r.ambiguous.length + r.statusMismatches.length + (r.drops || []).length : 0;
   }
 
   function render() {
@@ -895,7 +906,48 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
     }
   }
 
+  // ---- Login queue: the Stale list as a work list. Handed-out emails are remembered for today on this device
+  // only; an account leaves the queue on its own once its login is read, because it is no longer stale.
+  function queueKey() { var d = new Date(); return "mtgadash:queue:" + d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate(); }
+  function handedOut() {
+    var raw = storage.get(queueKey());
+    try { var v = JSON.parse(raw || "[]"); return Array.isArray(v) ? v : []; } catch (e) { return []; }
+  }
+  function setHandedOut(list) { storage.set(queueKey(), JSON.stringify(list)); }
+  function queue() {
+    var out = handedOut();
+    return staleAccounts().filter(function (a) { return out.indexOf(a.email) < 0; });
+  }
+  function loggedInToday() {
+    var midnight = new Date(); midnight.setHours(0, 0, 0, 0);
+    return state.data.accounts.filter(function (a) { return a.lastLoginUtc && Date.parse(a.lastLoginUtc) >= midnight.getTime(); }).length;
+  }
+  function nextInQueue(copy, button) {
+    var next = queue()[0];
+    if (!next) return;
+    if (copy) copyText(next.email, button);
+    setHandedOut(handedOut().concat([next.email]));
+    render();
+  }
+  function resetQueue() { storage.set(queueKey(), null); render(); }
+
+  function renderQueue(view) {
+    var q = queue();
+    var next = q[0];
+    var out = handedOut().length;
+    view.appendChild(h("section", { class: "card queue" },
+      h("h3", { text: "Login queue" }),
+      next ? h("div", { class: "toolbar" },
+        h("span", null, "Next: ", h("strong", { class: "mono", text: next.email }), " ", loginCell(next)),
+        h("button", { type: "button", id: "queue-copy", title: "Copy this email and move to the next account (N)", onclick: function (e) { nextInQueue(true, e.currentTarget); }, text: "Copy and next" }),
+        h("button", { type: "button", onclick: function () { nextInQueue(false); }, text: "Skip" }))
+        : h("p", { class: "muted", text: "Nothing left in today's queue." }),
+      h("p", { class: "muted", text: fmt(q.length) + " left · " + fmt(out) + " handed out today · " + fmt(loggedInToday()) + " logged in today. An account leaves the queue on its own once its login is read." },
+        out ? [" ", h("button", { type: "button", onclick: resetQueue, text: "Reset today's queue" })] : null)));
+  }
+
   function renderStale(view) {
+    renderQueue(view);
     var rows = staleAccounts();
     view.appendChild(h("div", { class: "toolbar" },
       h("label", null, "Not logged in for more than",
@@ -993,6 +1045,23 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
         m.source === "file" && !READ_ONLY ? h("button", { type: "button", onclick: function () { removeMapping(m.displayName); }, text: "Remove" }) : null);
     })) : h("p", { class: "muted", text: "No exception mappings yet." }));
 
+    var drops = r.drops || [];
+    view.appendChild(h("h3", { text: "Inventory drops (" + drops.length + ")" }));
+    view.appendChild(h("p", { class: "muted", text: "Large falls between two snapshots of one account in the last 30 days: spending you did not plan, or someone else using the account. Thresholds are AlertGemsDrop, AlertGoldDrop and AlertWildcardDrop in appsettings." }));
+    view.appendChild(drops.length ? h("div", { class: "table-wrap" }, h("table", null,
+      h("thead", null, h("tr", null, ["Account", "Between", "Gems", "Gold", "R", "M", "Why"].map(function (t, i) { return h("th", { class: i >= 2 && i <= 5 ? "num" : null, text: t }); }))),
+      h("tbody", null, drops.map(function (dr) {
+        function chg(v) { return v ? (v > 0 ? "+" : "") + fmt(v) : "0"; }
+        return h("tr", null,
+          h("td", null, dr.email ? h("a", { href: "#/account/" + encodeURIComponent(dr.email), class: "mono", text: dr.email }) : h("span", { text: dr.displayName })),
+          h("td", { title: localTime(dr.fromUtc) + " → " + localTime(dr.toUtc), text: new Date(dr.fromUtc).toLocaleDateString() + " → " + new Date(dr.toUtc).toLocaleDateString() }),
+          h("td", { class: "num" + (dr.gemsChange < 0 ? " neg" : ""), text: chg(dr.gemsChange) }),
+          h("td", { class: "num" + (dr.goldChange < 0 ? " neg" : ""), text: chg(dr.goldChange) }),
+          h("td", { class: "num" + (dr.rareChange < 0 ? " neg" : ""), text: chg(dr.rareChange) }),
+          h("td", { class: "num" + (dr.mythicChange < 0 ? " neg" : ""), text: chg(dr.mythicChange) }),
+          h("td", { class: "notes", text: dr.reasons.join("; ") }));
+      })))) : h("p", { class: "muted", text: "No large drops in the last 30 days." }));
+
     view.appendChild(h("h3", { text: "Marked unused, but has decks or rare wildcards (" + r.statusMismatches.length + ")" }));
     view.appendChild(r.statusMismatches.length ? h("div", { class: "table-wrap" }, h("table", null,
       h("thead", null, h("tr", null, ["Email", "Display name", "Status", "Decks", "R", "M"].map(function (t, i) { return h("th", { class: i >= 3 ? "num" : null, text: t }); }))),
@@ -1015,6 +1084,9 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
       h("span", null, "Last poll ", h("strong", { text: P.relativeTime(s.lastPollUtc, now) || "not yet" }),
         s.lastPollUtc ? h("span", { class: "muted", text: " · took " + s.lastPollMs + " ms · every " + s.pollSeconds + " s" }) : null),
       h("button", { type: "button", onclick: refreshStatus, text: "Refresh" })));
+    view.appendChild(h("div", { class: "toolbar" },
+      h("span", null, "Card names: ", h("strong", { text: state.cards && state.cards.rarityKnown ? "on" : "off" })),
+      h("button", { type: "button", onclick: openCardDbSetup, text: state.cards && state.cards.rarityKnown ? "Check" : "Set up card names" })));
     var g = state.game;
     if (g) {
       view.appendChild(h("div", { class: "toolbar" },
@@ -1138,14 +1210,115 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
   function rarityPill(r) { return r ? h("span", { class: "pill rarity-" + r, text: r }) : h("span", { class: "muted", text: "?" }); }
   function cardDbNotice(rarityKnown, status) {
     if (rarityKnown) return null;
-    return h("p", { class: "notice", text: "Rarity and card names need MTGA's card database: set CardDbPath (see README). Until then every card is listed by id, basic lands included."
-      + (status ? " Card database: " + status + "." : "") });
+    return h("p", { class: "notice" },
+      "Rarity and card names need MTGA's card database. Until it is set up every card is listed by id, basic lands included."
+        + (status ? " Card database: " + status + "." : "") + " ",
+      READ_ONLY ? null : h("button", { type: "button", onclick: openCardDbSetup, text: "Set up card names" }));
+  }
+
+  // ---------- Card names setup dialog ----------
+
+  function jsonPath(p) { return JSON.stringify({ MtgaDash: { CardDbPath: p } }, null, 2); }
+
+  function openCardDbSetup() {
+    if (READ_ONLY) return;
+    var body = h("div", { class: "setup" }, h("p", { class: "muted", text: "Checking this PC…" }));
+    openDialog("Set up card names", body);
+    function fill() {
+      api("/api/carddb").then(function (d) {
+        renderCardDbSetup(body, d);
+        // Names just came on: refresh the Cards data behind the dialog so ids turn into names there too.
+        if (d.state.cards > 0 && !(state.cards && state.cards.rarityKnown)) loadCards();
+      }, function (e) {
+        body.replaceChildren(h("p", { class: "notice", text: "Could not read the card database status: " + e.message }));
+      });
+    }
+    fill();
+    body.addEventListener("recheck", fill);
+  }
+
+  function renderCardDbSetup(body, d) {
+    var st = d.state;
+    var on = st.cards > 0;
+    var example = d.candidates.length ? d.candidates[0].pattern : "C:\\Program Files\\Wizards of the Coast\\MTGA\\MTGA_Data\\Downloads\\Raw\\Raw_CardDatabase_*.mtga";
+    var snippet = jsonPath(example);
+    var lookupInput = h("input", { type: "text", inputmode: "numeric", value: "92275", "aria-label": "Card id", class: "lookup-id" });
+    var lookupOut = h("span", { class: "muted", "aria-live": "polite" });
+    function lookup() {
+      var ids = lookupInput.value.replace(/[^0-9,]/g, "");
+      if (!ids) return;
+      api("/api/carddb/lookup?ids=" + encodeURIComponent(ids)).then(function (r) {
+        lookupOut.textContent = Object.keys(r).map(function (id) {
+          var c = r[id];
+          return id + " → " + (c && c.name ? c.name + (c.rarity ? " (" + c.rarity + (c.set ? ", " + c.set : "") + ")" : "") : "not found");
+        }).join("; ") || "No ids.";
+      });
+    }
+    body.replaceChildren(
+      h("p", { class: on ? "setup-on" : "setup-off" },
+        h("strong", { text: on ? "Card names are on. " : "Card names are off. " }),
+        on ? fmt(st.cards) + " cards from " + st.resolvedPath + (st.rarityKnown ? ", with rarity." : ", but no rarity column was found.")
+           : (st.status ? "Reason: " + st.status + "." : "")),
+
+      h("h3", { text: "1. Find MTGA's card database" }),
+      d.candidates.length
+        ? h("ul", { class: "list-plain" }, d.candidates.map(function (c) {
+            return h("li", null,
+              h("span", { class: c.ok ? "pill kind-inventory" : "pill kind-warning", text: c.ok ? fmt(c.cards) + " cards" : "unreadable" }),
+              h("code", { class: "wrap-code", text: c.file }),
+              c.ok ? null : h("span", { class: "muted", text: c.message }));
+          }))
+        : h("p", { class: "muted", text: "None found in the usual install folders. In File Explorer, open the folder MTGA is installed in, then MTGA_Data\\Downloads\\Raw, and look for Raw_CardDatabase_ followed by letters and digits, ending .mtga." }),
+      h("p", { class: "muted", text: "Usual folders: C:\\Program Files\\Wizards of the Coast\\MTGA (MTGA's own installer), C:\\Program Files (x86)\\Steam\\steamapps\\common\\MTGA (Steam), C:\\Program Files\\Epic Games\\MagicTheGathering (Epic). The file name changes with every MTGA update, so the setting uses * in its place." }),
+
+      h("h3", { text: "2. Add the setting" }),
+      h("p", null, "Open this file in Notepad (create it if it does not exist): "),
+      codeLine(d.settingsFile),
+      h("p", null, "Paste this, or if the file already has a \"MtgaDash\" section, add only the CardDbPath line inside it:"),
+      h("div", { class: "code-line" }, h("pre", { class: "snippet", text: snippet }),
+        h("button", { type: "button", onclick: function (e) { copyText(snippet, e.currentTarget); }, text: "Copy" })),
+      h("p", { class: "muted", text: "In this file every backslash is written twice, as above." }),
+
+      h("h3", { text: "3. Save, then check" }),
+      h("p", { class: "muted", text: "The app reloads the file on save: no restart needed. Names appear within a few seconds, here and on the Cards tab." }),
+      h("div", { class: "toolbar" },
+        h("button", { type: "button", onclick: function () { body.dispatchEvent(new Event("recheck")); }, text: "Check again" })),
+
+      h("h3", { text: "Look up a card id" }),
+      h("form", { class: "toolbar", onsubmit: function (e) { e.preventDefault(); lookup(); } },
+        lookupInput, h("button", { type: "submit", text: "Look up" }), lookupOut));
   }
 
   function renderCards(view) {
+    renderCardsMain(view);
+    if (state.cards) renderUnrecorded(view, state.cards);
+  }
+
+  // The decks still to open and save, so the counts above can be complete.
+  function renderUnrecorded(view, c) {
+    var list = (c.unrecorded || []).filter(function (u) {
+      var q = state.cardsSearch.trim().toLowerCase();
+      return !q || (u.displayName + " " + (u.email || "") + " " + u.deckNames.join(" ")).toLowerCase().indexOf(q) >= 0;
+    });
+    var total = list.reduce(function (n, u) { return n + u.count; }, 0);
+    view.appendChild(h("h3", { text: "Decks not recorded yet (" + fmt(total) + " decks on " + fmt(list.length) + " accounts)" }));
+    view.appendChild(h("p", { class: "muted", text: "Custom decks the account has, with no saved card list yet. Open each in MTGA's deck builder and press Done, and its cards count above." }));
+    if (!list.length) { view.appendChild(h("p", { class: "muted", text: "Every custom deck seen has been recorded." })); return; }
+    view.appendChild(h("div", { class: "table-wrap" }, h("table", null,
+      h("thead", null, h("tr", null, ["Account", "Not recorded", "Decks"].map(function (t, i) { return h("th", { class: i === 1 ? "num" : null, text: t }); }))),
+      h("tbody", null, list.slice(0, 300).map(function (u) {
+        return h("tr", null,
+          h("td", null, u.email ? h("a", { href: "#/account/" + encodeURIComponent(u.email), text: u.displayName }) : h("span", { title: "Not matched to an account", text: u.displayName })),
+          h("td", { class: "num", text: u.count + " of " + u.total }),
+          h("td", { class: "notes", text: u.deckNames.join(", ") + (u.count > u.deckNames.length ? ", …" : "") }));
+      })))));
+  }
+
+  function renderCardsMain(view) {
     var c = state.cards;
     view.appendChild(h("p", { class: "muted", text: "Cards each account is known to own, from every deck it ever saved: a deck with 4 copies proves at least 4. Cards never saved in a deck are not counted, so every number is a minimum." }));
     var controls = h("div", { class: "toolbar" },
+      READ_ONLY ? null : h("button", { type: "button", onclick: openCardDbSetup, title: "Set up or check card names", text: "Card names…" }),
       h("input", { type: "search", id: "cards-filter", placeholder: "Filter by card, set or account…", "aria-label": "Filter cards", value: state.cardsSearch,
         oninput: function (e) { state.cardsSearch = e.target.value; render(); } }),
       h("label", null, "At least",
@@ -1192,6 +1365,9 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
   function renderKnownCards(d) {
     var section = h("section", { class: "card" }, h("h3", { text: "Known cards (from saved decks)" }));
     var all = d.knownCards || [];
+    var unrecorded = d.customDecks.filter(function (dk) { return !dk.cardsJson; });
+    if (unrecorded.length) section.appendChild(h("p", { class: "notice", text: unrecorded.length + " of " + d.customDecks.length + " custom decks have no recorded card list yet, so their cards are not counted: "
+      + unrecorded.map(function (dk) { return dk.name; }).join(", ") + ". Open each in MTGA's deck builder and press Done." }));
     if (!all.length) {
       section.appendChild(h("p", { class: "muted", text: "No saved deck lists for this account yet. Save a deck in MTGA's deck builder and its cards are counted here." }));
       return section;
@@ -1630,6 +1806,10 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
     [["lastLoginUtc", "last login"], ["gems", "gems"], ["gold", "gold"], ["wcRare", "rare wildcards"], ["wcMythic", "mythic wildcards"], ["customDeckCount", "custom decks"], ["ownedCount", "owned cards at the Cards tab's copies"], ["email", "email"]].forEach(function (p) {
       cmds.push({ id: "sort-" + p[0], group: "Table", label: "Sort by " + p[1] + (state.sort.key === p[0] ? (state.sort.dir > 0 ? ": switch to descending" : ": switch to ascending") : ""), run: function () { go("accounts"); setSort(p[0]); } });
     });
+    var nextUp = queue()[0];
+    cmds.push({ id: "queue-next", group: "Queue", label: nextUp ? "Copy the next account to log in: " + nextUp.email : "Copy the next account to log in (queue empty)", hotkey: "N", disabled: !nextUp, run: function () { nextInQueue(true); } });
+    cmds.push({ id: "queue-skip", group: "Queue", label: "Skip the next account in the queue", disabled: !nextUp, run: function () { nextInQueue(false); } });
+    cmds.push({ id: "queue-reset", group: "Queue", label: "Reset today's login queue", disabled: !handedOut().length, run: resetQueue });
     cmds.push({ id: "copy-stale", group: "Stale", label: "Copy all stale emails (" + staleAccounts().length + ")", disabled: !staleAccounts().length, run: function () { copyText(staleAccounts().map(function (a) { return a.email; }).join("\n")); } });
     cmds.push({ id: "refresh", group: "Data", label: "Refresh now", hotkey: "R", disabled: READ_ONLY, run: load });
     cmds.push({ id: "reimport", group: "Data", label: "Re-import the accounts CSV", disabled: READ_ONLY, run: reimport });
@@ -1638,6 +1818,7 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
     CFG.themes.forEach(function (t) { cmds.push({ id: "theme-" + t.id, group: "Settings", label: "Theme: " + t.label + (display.theme === t.id ? " (in use)" : ""), disabled: display.theme === t.id, run: function () { chooseTheme(t.id); } }); });
     CFG.densities.forEach(function (d) { cmds.push({ id: "density-" + d.id, group: "Settings", label: "Density: " + d.label + (display.density === d.id ? " (in use)" : ""), disabled: display.density === d.id, run: function () { chooseDensity(d.id); } }); });
     CFG.textSizes.forEach(function (t) { cmds.push({ id: "text-" + t.id, group: "Settings", label: "Text size: " + t.label + (display.text === t.id ? " (in use)" : ""), disabled: display.text === t.id, run: function () { chooseText(t.id); } }); });
+    cmds.push({ id: "carddb-setup", group: "Cards", label: "Set up card names (CardDbPath)", disabled: READ_ONLY, run: openCardDbSetup });
     cmds.push({ id: "game-launch", group: "Game", label: state.game && state.game.running ? "Start MTGA (already running)" : "Start MTGA",
       disabled: READ_ONLY || !state.game || state.game.running || !state.game.canLaunch, run: launchGame });
     cmds.push({ id: "status-refresh", group: "Status", label: "Refresh ingestion status", disabled: READ_ONLY, run: refreshStatus });
@@ -1786,6 +1967,7 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
     if (k === "r" && !READ_ONLY) { load(); return; }
     if (k === "f") { e.preventDefault(); focusTableFilter(); return; }
     if (k === "c" && currentEmail()) { copyText(currentEmail()); return; }
+    if (k === "n" && !READ_ONLY) { nextInQueue(true); return; }
   });
 
   // ---------- Start ----------

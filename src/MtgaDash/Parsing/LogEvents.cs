@@ -13,7 +13,11 @@ public abstract record LogEvent
 /// <summary>A <c>Startup Timestamp:</c> line: a new client session, possibly within the same file.</summary>
 public sealed record SessionStarted(DateTime? StartedAtUtc) : LogEvent;
 
-public sealed record LoggedIn(string DisplayName, DateTime? AtUtc, string? ClientVersion) : LogEvent;
+public sealed record LoggedIn(string DisplayName, DateTime? AtUtc, string? ClientVersion) : LogEvent
+{
+    /// <summary>Which kind of line identified the login, shown on the Activity tab.</summary>
+    public string Source { get; init; } = "login line";
+}
 
 public sealed record BoosterCount(string SetCode, int CollationId, int Count);
 
@@ -34,6 +38,17 @@ public sealed record InventorySnapshot(
     int? WcTrackPosition,
     string? CustomTokensJson,
     IReadOnlyList<BoosterCount>? Boosters) : LogEvent;
+
+/// <summary>
+/// A change reported after a match or reward ("goldDelta": 250), applied to the session's latest inventory.
+/// MTGA logs these instead of a full inventory during play; the next full inventory supersedes them.
+/// </summary>
+public sealed record InventoryDelta(
+    string DisplayName, DateTime CapturedAtUtc, string Method,
+    int Gems, int Gold, int WcCommon, int WcUncommon, int WcRare, int WcMythic) : LogEvent
+{
+    public bool IsEmpty => Gems == 0 && Gold == 0 && WcCommon == 0 && WcUncommon == 0 && WcRare == 0 && WcMythic == 0;
+}
 
 public sealed record DeckSummary(
     string DeckId,

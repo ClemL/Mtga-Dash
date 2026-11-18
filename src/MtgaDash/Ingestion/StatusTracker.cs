@@ -77,7 +77,9 @@ public sealed class StatusTracker(Database db, MtgaDashOptions options)
         lock (_gate)
         {
             var issues = new List<string>();
-            var paths = _polledFiles.Union(rows.Keys, StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase);
+            // Once a poll has run, only the files it read: a file excluded by LogFilePattern since is history.
+            IEnumerable<string> source = _lastPollUtc is null ? rows.Keys : _polledFiles;
+            var paths = source.Order(StringComparer.OrdinalIgnoreCase);
             var files = new List<FileStatus>();
             foreach (var path in paths)
             {
@@ -88,6 +90,8 @@ public sealed class StatusTracker(Database db, MtgaDashOptions options)
                 files.Add(new FileStatus(path, info.Name, info.Exists, info.Exists ? info.Length : 0, row?.LengthProcessed ?? 0,
                     info.Exists ? Time.Format(info.LastWriteTimeUtc) : null, state?.DisplayName, Time.Format(state?.SessionTimeUtc), error));
                 if (error is not null) issues.Add($"{info.Name} could not be read: {error}");
+                if (info.Exists && MissingLogin(state, info.LastWriteTimeUtc, now))
+                    issues.Add($"MTGA is writing {info.Name} but no login has been recognized since the client started, so this session's inventory, decks and rank are being skipped. If you are logged in, look for the login line in the log (Activity tab, Last lines of a log) and report it.");
                 if (info.Exists && MissingInventory(state, info.LastWriteTimeUtc, now))
                     issues.Add($"{state!.DisplayName} is logged in ({info.Name}) but no inventory has been logged. Turn on Detailed Logs (Plugin Support) in MTGA: Options, Account.");
             }
@@ -106,6 +110,12 @@ public sealed class StatusTracker(Database db, MtgaDashOptions options)
     /// <summary>A login whose session has not produced a StartHook, in a file still being written.</summary>
     internal static bool MissingInventory(LogParserState? state, DateTime lastWriteUtc, DateTime nowUtc) =>
         state is { DisplayName: not null, SessionTimeUtc: null, BlockStartedUtc: { } started }
+        && nowUtc - lastWriteUtc <= ActiveWindow
+        && nowUtc - started >= InventoryGrace;
+
+    /// <summary>A client session in a file still being written, past the grace period, with no login recognized.</summary>
+    internal static bool MissingLogin(LogParserState? state, DateTime lastWriteUtc, DateTime nowUtc) =>
+        state is { DisplayName: null, BlockStartedUtc: { } started }
         && nowUtc - lastWriteUtc <= ActiveWindow
         && nowUtc - started >= InventoryGrace;
 

@@ -6,6 +6,12 @@ namespace MtgaDash.Cards;
 /// <summary>What MTGA's card database says about one card. Any field it could not resolve is null.</summary>
 public sealed record CardInfo(string? Name, string? Rarity, string? Set);
 
+/// <summary>A card database found on this PC, and whether it could be read.</summary>
+public sealed record CardDbCandidate(string Pattern, string File, bool Ok, int Cards, string Message);
+
+/// <summary>What the setup dialog shows: the setting, the file it resolved to, and how that went.</summary>
+public sealed record CardDbState(string Configured, string? ResolvedPath, int Cards, bool RarityKnown, string? Status);
+
 /// <summary>
 /// Optional card names, rarities and sets from MTGA's own card database. Its schema is not documented and
 /// changes between client versions, so nothing about it is assumed: the tables are inspected at runtime for a
@@ -15,14 +21,24 @@ public sealed record CardInfo(string? Name, string? Rarity, string? Set);
 public sealed class CardNames
 {
     private readonly ILogger _logger;
-    private readonly string _pattern;
+    private readonly Func<string> _pattern;
+    private readonly Lock _gate = new();
     private Dictionary<int, CardInfo>? _cards;
     private string? _loadedFrom;
 
-    public CardNames(string pathOrPattern, ILogger logger)
+    public CardNames(string pathOrPattern, ILogger logger) : this(() => pathOrPattern, logger) { }
+
+    /// <param name="pattern">Read on every lookup, so a CardDbPath saved in appsettings applies without a restart.</param>
+    public CardNames(Func<string> pattern, ILogger logger)
     {
-        _pattern = pathOrPattern;
+        _pattern = pattern;
         _logger = logger;
+    }
+
+    public CardDbState State()
+    {
+        var cards = Load();
+        return new CardDbState(_pattern() ?? "", _loadedFrom, cards?.Count ?? 0, cards?.Values.Any(i => i.Rarity is not null) ?? false, Status);
     }
 
     public string? Status { get; private set; }
@@ -45,13 +61,28 @@ public sealed class CardNames
 
     private Dictionary<int, CardInfo>? Load()
     {
-        if (string.IsNullOrWhiteSpace(_pattern)) return null;
-        var path = Resolve(_pattern);
-        if (path is null)
+        lock (_gate) return LoadLocked();
+    }
+
+    private Dictionary<int, CardInfo>? LoadLocked()
+    {
+        var pattern = _pattern();
+        if (string.IsNullOrWhiteSpace(pattern))
         {
-            SetStatus($"no card database matches {_pattern}");
+            _loadedFrom = null;
+            _cards = null;
+            SetStatus("CardDbPath is not set");
             return null;
         }
+        var path = Resolve(pattern);
+        if (path is null)
+        {
+            _loadedFrom = null;
+            _cards = null;
+            SetStatus($"no card database matches {pattern}");
+            return null;
+        }
+        // MTGA writes a new Raw_CardDatabase_<hash>.mtga with each update; the wildcard then resolves to it here.
         if (path == _loadedFrom) return _cards;
 
         _loadedFrom = path;
@@ -73,6 +104,51 @@ public sealed class CardNames
         if (status == Status) return;
         Status = status;
         _logger.LogInformation("Card database: {Status}", status);
+    }
+
+    /// <summary>The usual MTGA install folders: the Wizards installer, Steam and Epic, 64- and 32-bit Program Files.</summary>
+    public static IEnumerable<string> DefaultInstallFolders(string? gamePath = null)
+    {
+        var roots = new[] { Environment.GetEnvironmentVariable("ProgramFiles"), Environment.GetEnvironmentVariable("ProgramFiles(x86)") }
+            .Where(r => !string.IsNullOrEmpty(r)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var folders = new List<string>();
+        if (!string.IsNullOrWhiteSpace(gamePath) && !gamePath.Contains("://", StringComparison.Ordinal)
+            && Path.GetDirectoryName(MtgaDashOptions.Resolve(gamePath)) is { Length: > 0 } gameDir)
+            folders.Add(gameDir);
+        foreach (var r in roots)
+        {
+            folders.Add(Path.Combine(r!, "Wizards of the Coast", "MTGA"));
+            folders.Add(Path.Combine(r!, "Steam", "steamapps", "common", "MTGA"));
+            folders.Add(Path.Combine(r!, "Epic Games", "MagicTheGathering"));
+        }
+        return folders.Distinct(StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Each install folder that holds a card database, with the newest one tested.</summary>
+    public static List<CardDbCandidate> FindCandidates(IEnumerable<string> installFolders)
+    {
+        var found = new List<CardDbCandidate>();
+        foreach (var folder in installFolders)
+        {
+            var pattern = Path.Combine(folder, "MTGA_Data", "Downloads", "Raw", "Raw_CardDatabase_*.mtga");
+            if (Resolve(pattern) is not { } file) continue;
+            found.Add(Probe(pattern, file));
+        }
+        return found;
+    }
+
+    /// <summary>Reads a card database once to say whether it works, without changing what is in use.</summary>
+    public static CardDbCandidate Probe(string pattern, string file)
+    {
+        try
+        {
+            var cards = Read(file, out var description);
+            return new CardDbCandidate(pattern, file, true, cards.Count, description);
+        }
+        catch (Exception ex) when (ex is SqliteException or InvalidDataException or IOException)
+        {
+            return new CardDbCandidate(pattern, file, false, 0, ex.Message);
+        }
     }
 
     /// <summary>A literal path, or a folder plus a wildcard file name; the newest match wins.</summary>

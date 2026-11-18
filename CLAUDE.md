@@ -47,18 +47,24 @@ src/MtgaDash/
   Cards/        CardNames: optional names, rarity and set from MTGA's own SQLite card DB, schema found at
                 runtime; KnownCollection (pure): cards owned, as a minimum, from saved deck lists
   Game/         GameLauncher: starts MTGA at startup (LaunchGame) or from the Status tab, never twice
-  Web/          PageRenderer (fills index.html placeholders), StaticExporter, DisplayOptions, BuildInfo
+  Web/          PageRenderer (fills index.html placeholders), StaticExporter, DisplayOptions, BuildInfo,
+                StartPage (writes the address and opens the browser once listening)
   wwwroot/      index.html (the whole UI), updates.txt (changelog)
 tests/MtgaDash.Tests/   MSTest; Fixtures.cs builds synthetic logs
 tools/Register-MtgaDashTask.ps1   logon task for the published exe
+tools/Update-MtgaDash.ps1         stop, pull, publish, start
 ```
 
 ## Conventions that matter here
 
 * **The parser is pure.** `LogParser` takes lines and returns events; no I/O, no clock, the time zone is
   injected. Log-format changes belong there, with a test in `LogParserTests`.
+* **Inventory changes (`InventoryDelta`) apply once.** They update the session's snapshot only from a later line
+  than the one that last set it (`SourceLine`), like every other update; never add a delta without that guard.
 * **The parser reports every message, read or not** (`MessageSeen`), so the Activity tab shows what MTGA
   writes. When you add support for a message, check its Activity row turns from "not read" to read.
+* **`CardDbPath` is read from configuration on every lookup**, not from the startup options, so saving it in
+  `appsettings.Production.json` applies without a restart (ASP.NET reloads that file). Keep it that way.
 * **Owned counts are a minimum, from saved decks.** `KnownCollection` takes the most copies in any one deck
   version, never a sum across decks. MTGA's rarity numbers are mapped in `CardNames.RarityName`; an
   unknown value stays null rather than guessed.
@@ -103,7 +109,10 @@ without it a lagging archive copy ingested after the live log rolled the invento
 injected zone; tests pin UTC so they pass on any machine.
 
 **Dapper maps records by constructor, with exact types.** SQLite integers are `Int64`: a `bool` or `int`
-parameter in a query record throws at runtime (`DeckRow.IsPrecon` is `long` for this reason).
+parameter in a query record throws at runtime (`DeckRow.IsPrecon` is `long` for this reason). Worse, a
+computed column (COUNT, SUM, EXISTS, a window function) has no type at all when the result is empty, so a
+positional record over one throws on an empty database: use settable properties there (`AccountLatest`,
+`PlayerRow`, `SetTotal`). `EmptyDatabaseTests` runs every query on an empty database; add new ones to it.
 
 **`request` in a client request line is JSON inside a JSON string, sometimes encoded twice.** Use
 `Json.Unwrap`, which re-parses until the value is no longer a string.
@@ -114,7 +123,8 @@ parameter in a query record throws at runtime (`DeckRow.IsPrecon` is `long` for 
 
 **A hidden (S4U) task or a service has no desktop.** A GUI app started from there runs invisibly, so
 `GameLauncher` refuses when `Environment.UserInteractive` is false; the logon task's `-Interactive` switch is
-the fix. Tests replace `GameLauncher.Start`: never launch a real process from a test.
+the fix. Tests replace `GameLauncher.Start` and `StartPage.Open`, and `ApiTests` pass `OpenBrowser=false`:
+never launch a real process or browser from a test (CI has a desktop).
 
 **`nuget.config` must keep `<clear />`.** The owner's global config has a private Azure Artifacts feed that
 answers 401 and breaks restores.

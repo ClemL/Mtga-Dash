@@ -37,6 +37,8 @@ public sealed class ApiTests
             $"--MtgaDash:ExportFolder={Path.Combine(_folder, "export")}",
             "--MtgaDash:WatchLiveLog=false",
             "--MtgaDash:PollSeconds=1",
+            // CI has a desktop: without this every test run would open a browser.
+            "--MtgaDash:OpenBrowser=false",
             "--Logging:LogLevel:Default=Warning",
         ]);
         await _app.StartAsync();
@@ -174,6 +176,18 @@ public sealed class ApiTests
         StringAssert.Contains(body.GetProperty("message").GetString(), "not found");
         var status = await _http.GetFromJsonAsync<JsonElement>("/api/game");
         Assert.IsFalse(status.GetProperty("canLaunch").GetBoolean());
+    }
+
+    [TestMethod]
+    public async Task Card_database_setup_reports_its_state_and_where_the_setting_goes()
+    {
+        var d = await _http.GetFromJsonAsync<JsonElement>("/api/carddb");
+        Assert.AreEqual(0, d.GetProperty("state").GetProperty("cards").GetInt32());
+        StringAssert.Contains(d.GetProperty("state").GetProperty("status").GetString(), "not set");
+        StringAssert.EndsWith(d.GetProperty("settingsFile").GetString(), ".json");
+        var lookup = await _http.GetFromJsonAsync<JsonElement>("/api/carddb/lookup?ids=92275,abc");
+        Assert.AreEqual(JsonValueKind.Null, lookup.GetProperty("92275").ValueKind);
+        Assert.IsFalse(lookup.TryGetProperty("abc", out _));
     }
 
     [TestMethod]

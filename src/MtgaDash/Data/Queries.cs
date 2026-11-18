@@ -6,13 +6,40 @@ using MtgaDash.Cards;
 
 namespace MtgaDash.Data;
 
-public sealed record AccountLatest(
-    string Email, string? Alias, string? DisplayName, string? Status, string? Notes, string? MiscNotes, string? NoteSource,
-    string MatchState, string? FirstSeenUtc, string? LastLoginUtc, long? SnapshotId, string? CapturedAtUtc,
-    long? Gems, long? Gold, long? WcCommon, long? WcUncommon, long? WcRare, long? WcMythic,
-    double? VaultProgress, long? WcTrackPosition, long BoosterTotal,
-    long? Season, string? ConstructedClass, long? ConstructedLevel, string? LimitedClass, long? LimitedLevel,
-    long CustomDeckCount);
+/// <summary>
+/// One row of vAccountLatest. Settable properties, not a positional record: with no rows, SQLite reports computed
+/// columns (counts, totals) without a type and Dapper's constructor matching fails; property mapping converts.
+/// </summary>
+public sealed record AccountLatest
+{
+    public string Email { get; set; } = "";
+    public string? Alias { get; set; }
+    public string? DisplayName { get; set; }
+    public string? Status { get; set; }
+    public string? Notes { get; set; }
+    public string? MiscNotes { get; set; }
+    public string? NoteSource { get; set; }
+    public string MatchState { get; set; } = "";
+    public string? FirstSeenUtc { get; set; }
+    public string? LastLoginUtc { get; set; }
+    public long? SnapshotId { get; set; }
+    public string? CapturedAtUtc { get; set; }
+    public long? Gems { get; set; }
+    public long? Gold { get; set; }
+    public long? WcCommon { get; set; }
+    public long? WcUncommon { get; set; }
+    public long? WcRare { get; set; }
+    public long? WcMythic { get; set; }
+    public double? VaultProgress { get; set; }
+    public long? WcTrackPosition { get; set; }
+    public long BoosterTotal { get; set; }
+    public long? Season { get; set; }
+    public string? ConstructedClass { get; set; }
+    public long? ConstructedLevel { get; set; }
+    public string? LimitedClass { get; set; }
+    public long? LimitedLevel { get; set; }
+    public long CustomDeckCount { get; set; }
+}
 
 public sealed record SnapshotPoint(string CapturedAtUtc, long? Gems, long? Gold, long? WcCommon, long? WcUncommon, long? WcRare, long? WcMythic, double? VaultProgress);
 
@@ -42,9 +69,19 @@ public sealed record CardAcrossAccounts(int CardId, string? Name, string? Rarity
 
 public sealed record CardsReport(
     bool RarityKnown, string? CardDbStatus, int MinCopies, IReadOnlyList<string> Rarities,
-    IReadOnlyList<CardAcrossAccounts> Cards, IReadOnlyDictionary<string, int> PerAccount, int AccountsWithDecks);
+    IReadOnlyList<CardAcrossAccounts> Cards, IReadOnlyDictionary<string, int> PerAccount, int AccountsWithDecks,
+    IReadOnlyList<UnrecordedDecks> Unrecorded);
 
-public sealed record SetTotal(string SetCode, long Count, long Accounts);
+/// <summary>Custom decks whose card list has never been logged: open and save each to count its cards.</summary>
+public sealed record UnrecordedDecks(string? Email, string DisplayName, int Count, int Total, IReadOnlyList<string> DeckNames);
+
+/// <summary>Boosters of one set across accounts. Property-mapped: SUM and COUNT columns have no type when empty.</summary>
+public sealed record SetTotal
+{
+    public string SetCode { get; set; } = "";
+    public long Count { get; set; }
+    public long Accounts { get; set; }
+}
 
 public sealed record Totals(
     long Gems, long Gold, long WcCommon, long WcUncommon, long WcRare, long WcMythic,
@@ -57,16 +94,34 @@ public sealed record AmbiguousPlayer(string DisplayName, string? LastLoginUtc, I
 
 public sealed record StatusMismatch(string Email, string? DisplayName, string? Status, long CustomDeckCount, long? WcRare, long? WcMythic);
 
-public sealed record PlayerRow(
-    string DisplayName, string? Email, string? FirstSeenUtc, string? LastLoginUtc, string? LastInventoryUtc,
-    long? Gems, long? Gold, long? WcRare, long? WcMythic, long Snapshots);
+/// <summary>
+/// A display name with its latest inventory. Property-mapped for the same reason as <see cref="AccountLatest"/>.
+/// </summary>
+public sealed record PlayerRow
+{
+    public string DisplayName { get; set; } = "";
+    public string? Email { get; set; }
+    public string? FirstSeenUtc { get; set; }
+    public string? LastLoginUtc { get; set; }
+    public string? LastInventoryUtc { get; set; }
+    public long? Gems { get; set; }
+    public long? Gold { get; set; }
+    public long? WcRare { get; set; }
+    public long? WcMythic { get; set; }
+    public long Snapshots { get; set; }
+}
 
 public sealed record MappingRow(string DisplayName, string Email, string Source, bool PlayerSeen, bool AccountExists);
 
-public sealed record Review(IReadOnlyList<UnmatchedPlayer> Unmatched, IReadOnlyList<AmbiguousPlayer> Ambiguous, IReadOnlyList<StatusMismatch> StatusMismatches, IReadOnlyList<MappingRow> Mappings);
+public sealed record Review(IReadOnlyList<UnmatchedPlayer> Unmatched, IReadOnlyList<AmbiguousPlayer> Ambiguous, IReadOnlyList<StatusMismatch> StatusMismatches, IReadOnlyList<MappingRow> Mappings, IReadOnlyList<InventoryDrop> Drops);
+
+/// <summary>A fall between two consecutive snapshots of one account, large enough to look at.</summary>
+public sealed record InventoryDrop(
+    string? Email, string DisplayName, string FromUtc, string ToUtc,
+    long GemsChange, long GoldChange, long RareChange, long MythicChange, IReadOnlyList<string> Reasons);
 
 /// <summary>Read side of the API. Every query is plain SQL against the schema in <see cref="Database"/>.</summary>
-public sealed partial class Queries(Database db, Cards.CardNames? cards = null, ExceptionStore? exceptions = null)
+public sealed partial class Queries(Database db, Cards.CardNames? cards = null, ExceptionStore? exceptions = null, MtgaDashOptions? options = null)
 {
     public IReadOnlyList<AccountLatest> Accounts(string? search = null, string? status = null, bool? stale = null, int staleDays = 30, DateTime? nowUtc = null)
     {
@@ -172,7 +227,29 @@ public sealed partial class Queries(Database db, Cards.CardNames? cards = null, 
             })
             .OrderByDescending(x => x.Holders.Count).ThenBy(x => x.Name ?? "~").ThenBy(x => x.CardId)
             .ToList();
-        return new CardsReport(rarityKnown, cards?.Status, minCopies, rarities, report, perAccount, byAccount.Count);
+        return new CardsReport(rarityKnown, cards?.Status, minCopies, rarities, report, perAccount, byAccount.Count, Unrecorded(c, emails));
+    }
+
+    /// <summary>
+    /// Per account, custom decks known from the login summary with no saved card list. Precons are left out:
+    /// they are the same for every account and add commons, not the rares this view is for.
+    /// </summary>
+    private static List<UnrecordedDecks> Unrecorded(Microsoft.Data.Sqlite.SqliteConnection c, IReadOnlyDictionary<string, string?> emails)
+    {
+        var rows = c.Query<(string DisplayName, string Name, long Recorded)>("""
+            SELECT d.DisplayName, d.Name,
+                   EXISTS(SELECT 1 FROM DeckLists l WHERE l.DisplayName = d.DisplayName AND l.DeckId = d.DeckId) AS Recorded
+            FROM Decks d WHERE d.IsPrecon = 0
+            """).ToList();
+        return rows.GroupBy(r => r.DisplayName)
+            .Select(g =>
+            {
+                var missing = g.Where(r => r.Recorded == 0).Select(r => r.Name).Order(StringComparer.OrdinalIgnoreCase).ToList();
+                return new UnrecordedDecks(emails.GetValueOrDefault(g.Key), g.Key, missing.Count, g.Count(), missing.Take(8).ToList());
+            })
+            .Where(u => u.Count > 0)
+            .OrderByDescending(u => u.Count).ThenBy(u => u.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     private static IEnumerable<int> CardIds(string? cardsJson)
@@ -248,7 +325,7 @@ public sealed partial class Queries(Database db, Cards.CardNames? cards = null, 
             .Select(m => new MappingRow(m.DisplayName, m.Email, m.Source, lookup.ContainsKey(m.DisplayName),
                 emails.Contains(m.Email, StringComparer.OrdinalIgnoreCase)))
             .ToList();
-        return new Review(unmatched, ambiguous, mismatches, mappings);
+        return new Review(unmatched, ambiguous, mismatches, mappings, Drops(c));
     }
 
     /// <summary>
@@ -266,6 +343,62 @@ public sealed partial class Queries(Database db, Cards.CardNames? cards = null, 
             LEFT JOIN Snapshots s ON s.Id = (SELECT s2.Id FROM Snapshots s2 WHERE s2.DisplayName = p.DisplayName ORDER BY s2.CapturedAtUtc DESC LIMIT 1)
             ORDER BY COALESCE(p.LastLoginUtc, '') DESC, p.DisplayName
             """).ToList();
+    }
+
+    /// <summary>
+    /// Settable properties, not a positional record: SQLite gives window-function columns no declared type, so
+    /// Dapper's constructor matching fails on them, while property mapping converts each value.
+    /// </summary>
+    private sealed class SnapshotPair
+    {
+        public string DisplayName { get; set; } = "";
+        public string? Email { get; set; }
+        public string CapturedAtUtc { get; set; } = "";
+        public long? Gems { get; set; }
+        public long? Gold { get; set; }
+        public long? WcRare { get; set; }
+        public long? WcMythic { get; set; }
+        public string? PrevAt { get; set; }
+        public long? PrevGems { get; set; }
+        public long? PrevGold { get; set; }
+        public long? PrevRare { get; set; }
+        public long? PrevMythic { get; set; }
+    }
+
+    /// <summary>
+    /// Drops between consecutive snapshots in the last AlertDays: spending you did not mean, or an account
+    /// someone else used. Only fields both snapshots have are compared, so a partial update raises nothing.
+    /// </summary>
+    public IReadOnlyList<InventoryDrop> Drops(Microsoft.Data.Sqlite.SqliteConnection c, DateTime? nowUtc = null)
+    {
+        var o = options ?? new MtgaDashOptions();
+        var cutoff = Time.Format((nowUtc ?? DateTime.UtcNow).AddDays(-Math.Max(1, o.AlertDays)));
+        var pairs = c.Query<SnapshotPair>("""
+            SELECT * FROM (
+                SELECT s.DisplayName, p.Email, s.CapturedAtUtc, s.Gems, s.Gold, s.WcRare, s.WcMythic,
+                       LAG(s.CapturedAtUtc) OVER w AS PrevAt, LAG(s.Gems) OVER w AS PrevGems, LAG(s.Gold) OVER w AS PrevGold,
+                       LAG(s.WcRare) OVER w AS PrevRare, LAG(s.WcMythic) OVER w AS PrevMythic
+                FROM Snapshots s LEFT JOIN Players p ON p.DisplayName = s.DisplayName
+                WINDOW w AS (PARTITION BY s.DisplayName ORDER BY s.CapturedAtUtc))
+            WHERE PrevAt IS NOT NULL AND CapturedAtUtc >= @cutoff
+            """, new { cutoff });
+
+        static long Change(long? now, long? before) => now is { } a && before is { } b ? a - b : 0;
+        var drops = new List<InventoryDrop>();
+        foreach (var p in pairs)
+        {
+            var gems = Change(p.Gems, p.PrevGems);
+            var gold = Change(p.Gold, p.PrevGold);
+            var rare = Change(p.WcRare, p.PrevRare);
+            var mythic = Change(p.WcMythic, p.PrevMythic);
+            var reasons = new List<string>();
+            if (-gems >= o.AlertGemsDrop) reasons.Add($"gems down {-gems:N0}");
+            if (-gold >= o.AlertGoldDrop) reasons.Add($"gold down {-gold:N0}");
+            if (-(rare + mythic) >= o.AlertWildcardDrop) reasons.Add($"rare and mythic wildcards down {-(rare + mythic)}");
+            if (reasons.Count > 0)
+                drops.Add(new InventoryDrop(p.Email, p.DisplayName, p.PrevAt!, p.CapturedAtUtc, gems, gold, rare, mythic, reasons));
+        }
+        return drops.OrderByDescending(d => d.ToUtc, StringComparer.Ordinal).ToList();
     }
 
     public IReadOnlyList<string> Statuses()

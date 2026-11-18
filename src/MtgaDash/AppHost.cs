@@ -43,11 +43,16 @@ public static class AppHost
         builder.Services.AddSingleton(sp => new ExceptionStore(ExceptionsPath(options), sp.GetRequiredService<ILogger<ExceptionStore>>()));
         builder.Services.AddSingleton<StatusTracker>();
         builder.Services.AddSingleton<ActivityLog>();
-        builder.Services.AddSingleton(sp => new CardNames(options.CardDbPath, sp.GetRequiredService<ILogger<CardNames>>()));
-        builder.Services.AddSingleton(sp => new Queries(db, sp.GetRequiredService<CardNames>(), sp.GetRequiredService<ExceptionStore>()));
+        // Read from configuration on each lookup: appsettings files reload on save, so a CardDbPath added in the
+        // setup dialog's steps applies without a restart.
+        var config = builder.Configuration;
+        builder.Services.AddSingleton(sp => new CardNames(() => config[$"{MtgaDashOptions.Section}:{nameof(MtgaDashOptions.CardDbPath)}"] ?? "",
+            sp.GetRequiredService<ILogger<CardNames>>()));
+        builder.Services.AddSingleton(sp => new Queries(db, sp.GetRequiredService<CardNames>(), sp.GetRequiredService<ExceptionStore>(), options));
         builder.Services.AddSingleton(sp => new LogIngestor(db, sp.GetRequiredService<ILogger<LogIngestor>>(),
             onWarning: sp.GetRequiredService<StatusTracker>().Warning, onEvent: sp.GetRequiredService<ActivityLog>().Record));
         builder.Services.AddSingleton<PageRenderer>();
+        builder.Services.AddSingleton<StartPage>();
         builder.Services.AddSingleton<StaticExporter>();
         builder.Services.AddSingleton<IngestionService>();
         builder.Services.AddSingleton<Game.GameLauncher>();
@@ -62,6 +67,8 @@ public static class AppHost
             options.WatchLiveLog ? MtgaDashOptions.Resolve(options.LiveLogPath) : "(off)", ExceptionsPath(options));
 
         MapEndpoints(app, options);
+        // app.Urls holds the real address only once Kestrel is listening (port 0 in tests picks one then).
+        app.Lifetime.ApplicationStarted.Register(() => app.Services.GetRequiredService<StartPage>().Announce(app.Urls));
         return app;
     }
 
@@ -104,6 +111,20 @@ public static class AppHost
             q.Cards(Math.Clamp(minCopies ?? 3, 1, 99), rarity?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)));
         api.MapGet("/status", (StatusTracker s) => s.Snapshot());
         api.MapGet("/game", (Game.GameLauncher g) => g.Status());
+        api.MapGet("/carddb", (CardNames cards) => new
+        {
+            state = cards.State(),
+            // Where to put the setting: beside the exe, read on top of appsettings.json and never overwritten by publishing.
+            settingsFile = Path.Combine(AppContext.BaseDirectory, $"appsettings.{app.Environment.EnvironmentName}.json"),
+            candidates = CardNames.FindCandidates(CardNames.DefaultInstallFolders(options.GamePath)),
+        });
+        api.MapGet("/carddb/lookup", (CardNames cards, string? ids) =>
+        {
+            var list = (ids ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(x => int.TryParse(x, out var n) ? n : (int?)null).OfType<int>().Distinct().Take(200).ToList();
+            var found = cards.Info(list);
+            return list.ToDictionary(id => id.ToString(System.Globalization.CultureInfo.InvariantCulture), id => found.GetValueOrDefault(id));
+        });
         api.MapGet("/activity", (ActivityLog a, Queries q) => new { entries = a.Entries(), messages = a.Messages(), players = q.Players() });
         // Only a file the app already reads can be tailed, so the name cannot be used to read anything else.
         api.MapGet("/logtail", (StatusTracker s, string? file, int? lines) =>

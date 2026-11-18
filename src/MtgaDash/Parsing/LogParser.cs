@@ -68,7 +68,7 @@ public sealed class LogParser
             var body = line.TrimStart();
             if (body.StartsWith('{') || body.StartsWith('"'))
             {
-                HandleResponse(pending, body, events);
+                Seen("response", pending, body, events, () => HandleResponse(pending, body, events));
                 return events;
             }
             // No body after the header: fall through and treat the line on its own.
@@ -114,7 +114,7 @@ public sealed class LogParser
             var method = (paren > 0 ? header[..paren] : header.Split(' ', 2)[0]).Trim();
             var close = header.IndexOf(')');
             var sameLineBody = close >= 0 ? header[(close + 1)..].Trim() : "";
-            if (sameLineBody.StartsWith('{')) HandleResponse(method, sameLineBody, events);
+            if (sameLineBody.StartsWith('{')) Seen("response", method, sameLineBody, events, () => HandleResponse(method, sameLineBody, events));
             else State.PendingResponse = method;
             return events;
         }
@@ -124,11 +124,33 @@ public sealed class LogParser
         {
             var rest = trimmed[(request + RequestMarker.Length)..];
             var space = rest.IndexOf(' ');
-            if (space > 0 && rest[..space] == "DeckUpsertDeckV3")
-                HandleDeckUpsert(rest[(space + 1)..].Trim(), events);
+            var method = (space > 0 ? rest[..space] : rest).Trim();
+            var payload = space > 0 ? rest[(space + 1)..].Trim() : "";
+            if (method.Length > 0)
+                Seen("request", method, payload, events, () =>
+                {
+                    if (method == "DeckUpsertDeckV3") HandleDeckUpsert(payload, events);
+                });
         }
 
         return events;
+    }
+
+    /// <summary>
+    /// Words that suggest a message carries inventory, so the Activity tab can point at a message the parser
+    /// does not read yet (for example per-match gold changes) instead of leaving it invisible.
+    /// </summary>
+    internal static readonly string[] InventoryHints =
+        ["InventoryInfo", "InventoryUpdate", "GoldDelta", "GemsDelta", "WildCard", "Booster", "VaultProgress"];
+
+    /// <summary>Runs a handler and reports the message to the Activity tab, read or not.</summary>
+    private void Seen(string direction, string method, string body, List<LogEvent> events, Action handle)
+    {
+        var before = events.Count;
+        handle();
+        var handled = events.Skip(before).Any(e => e is not ParseWarning);
+        var hints = InventoryHints.Where(h => body.Contains(h, StringComparison.OrdinalIgnoreCase)).ToArray();
+        events.Add(new MessageSeen(direction, method, State.DisplayName, handled, hints, body.Length));
     }
 
     /// <summary>A response header starts the line, optionally after a <c>[Logger]</c> tag.</summary>

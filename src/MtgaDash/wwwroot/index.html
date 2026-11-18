@@ -218,6 +218,17 @@ kbd {
 .tabs .count.issue { color: var(--bad); border: 1px solid var(--bad); background: none; font-weight: 600; }
 .issue-line { color: var(--bad); font-weight: 600; }
 .map-input { flex: 1 1 14em; min-width: 0; }
+.pill.kind-inventory, .pill.kind-login { color: var(--good); border-color: var(--good); }
+.pill.kind-not-read { color: var(--warn); border-color: var(--warn); font-weight: 600; }
+.pill.kind-warning { color: var(--bad); border-color: var(--bad); font-weight: 600; }
+tr.suspicious td { background: var(--hover); }
+tr.suspicious td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
+.log-tail {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: calc(12px * var(--text-scale));
+  background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+  padding: var(--card-p); margin: 0; max-height: 28rem; overflow: auto; white-space: pre;
+}
 
 main { padding: var(--section-gap) 0; flex: 1 0 auto; min-width: 0; }
 h2 { font-size: calc(17px * var(--text-scale)); margin: 0 0 var(--block); }
@@ -533,6 +544,10 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
     selectedEmail: null,
     data: { accounts: [], totals: null, review: null, statuses: [] },
     ingest: null,
+    activity: null,
+    activityFilter: "",
+    activityAuto: true,
+    tail: null,
     loaded: false,
     detail: null,
     updatedAt: null,
@@ -670,6 +685,7 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
       loadDetail(state.route.email).then(render);
     } else {
       render();
+      if (state.route.view === "activity") loadActivity();
     }
   }
 
@@ -681,7 +697,8 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
     { id: "totals", label: "Totals", key: "3" },
     { id: "review", label: "Review", key: "4" },
     { id: "status", label: "Status", key: "5" },
-  ].filter(function (v) { return !(READ_ONLY && v.id === "status"); }); // the export has no ingestion to report on
+    { id: "activity", label: "Activity", key: "6" },
+  ].filter(function (v) { return !(READ_ONLY && (v.id === "status" || v.id === "activity")); }); // the export has no ingestion to report on
 
   function filteredAccounts() {
     return state.data.accounts.filter(function (a) {
@@ -719,6 +736,7 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
     else if (r === "totals") renderTotals(view);
     else if (r === "review") renderReview(view);
     else if (r === "status") renderStatus(view);
+    else if (r === "activity") renderActivity(view);
     else if (r === "account") renderDetail(view);
     // Re-rendering on a live update must not steal the caret from a filter box or jump the page.
     if (focusedId) {
@@ -1001,6 +1019,90 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
     })) : h("p", { class: "muted", text: "No lines were skipped since the app started." }));
   }
 
+  function activityMatches(text) {
+    var q = state.activityFilter.trim().toLowerCase();
+    if (!q) return true;
+    var hay = text.toLowerCase();
+    return q.split(/\s+/).every(function (t) { return hay.indexOf(t) >= 0; });
+  }
+
+  function renderActivity(view) {
+    var a = state.activity;
+    var now = Date.now();
+    view.appendChild(h("div", { class: "toolbar" },
+      h("input", {
+        type: "search", id: "activity-filter", placeholder: "Filter by name, message or text…", "aria-label": "Filter activity",
+        value: state.activityFilter, oninput: function (e) { state.activityFilter = e.target.value; render(); },
+      }),
+      h("label", null, h("input", { type: "checkbox", checked: state.activityAuto, onchange: toggleActivityAuto }), "Refresh every 3 s"),
+      h("button", { type: "button", onclick: loadActivity, text: "Refresh" }),
+      state.activityAt ? h("span", { class: "muted", text: "updated " + new Date(state.activityAt).toLocaleTimeString() }) : null));
+    view.appendChild(h("p", { class: "muted", text: "What the app found in the logs since it started, newest first. If you played and nothing changed: check your display name below has an account, then look for highlighted rows in Messages and \"not read\" rows in Recent activity." }));
+    if (!a) { view.appendChild(h("p", { class: "muted", text: "Loading…" })); return; }
+
+    var players = a.players.filter(function (p) { return activityMatches([p.displayName, p.email || "unmatched"].join(" ")); });
+    view.appendChild(h("h3", { text: "Display names seen (" + players.length + ")" }));
+    view.appendChild(players.length ? h("div", { class: "table-wrap" }, h("table", null,
+      h("thead", null, h("tr", null, ["Display name", "Account", "Last login", "Last inventory", "Snapshots", "Gems", "Gold", "R", "M"].map(function (t, i) { return h("th", { class: i >= 4 ? "num" : null, text: t }); }))),
+      h("tbody", null, players.map(function (p) {
+        return h("tr", null,
+          h("td", { text: p.displayName }),
+          h("td", null, p.email ? h("a", { href: "#/account/" + encodeURIComponent(p.email), class: "mono", text: p.email })
+            : h("a", { href: "#/review", class: "login old", title: "Not tied to an account, so it is not on the Accounts tab. Map it on the Review tab.", text: "unmatched: map on Review" })),
+          h("td", { title: localTime(p.lastLoginUtc), text: P.relativeTime(p.lastLoginUtc, now) || "never" }),
+          h("td", { title: localTime(p.lastInventoryUtc), text: P.relativeTime(p.lastInventoryUtc, now) || "none" }),
+          h("td", { class: "num", text: fmt(p.snapshots) }),
+          h("td", { class: "num", text: fmt(p.gems) }), h("td", { class: "num", text: fmt(p.gold) }),
+          h("td", { class: "num", text: fmt(p.wcRare) }), h("td", { class: "num", text: fmt(p.wcMythic) }));
+      })))) : h("p", { class: "muted", text: a.players.length ? "No display name matches the filter." : "No logins found in any log yet." }));
+
+    var messages = a.messages.filter(function (m) { return activityMatches([m.method, m.direction, m.hints.join(" "), m.lastDisplayName || ""].join(" ")); });
+    view.appendChild(h("h3", { text: "Messages from MTGA (" + messages.length + ")" }));
+    view.appendChild(h("p", { class: "muted", text: "Every request and response the client logged, read or not. A highlighted row mentions inventory but is not read yet: it is the likely reason numbers did not move after a match." }));
+    view.appendChild(messages.length ? h("div", { class: "table-wrap" }, h("table", null,
+      h("thead", null, h("tr", null, ["Message", "Direction", "Count", "Read", "Mentions", "Last seen", "Last file", "Largest"].map(function (t, i) { return h("th", { class: i === 2 || i === 3 || i === 7 ? "num" : null, text: t }); }))),
+      h("tbody", null, messages.map(function (m) {
+        var suspicious = m.hints.length && !m.handled;
+        return h("tr", { class: suspicious ? "suspicious" : null },
+          h("td", { class: "mono", text: m.method }), h("td", { text: m.direction }),
+          h("td", { class: "num", text: fmt(m.count) }), h("td", { class: "num", text: fmt(m.handled) }),
+          h("td", { text: m.hints.join(", ") || "—" }),
+          h("td", { text: P.relativeTime(m.lastSeenUtc, now) }), h("td", { class: "mono", text: m.lastFile }),
+          h("td", { class: "num", text: bytes(m.largestBytes) }));
+      })))) : h("p", { class: "muted", text: "No messages yet. With Detailed Logs off, MTGA writes none." }));
+
+    var entries = a.entries.filter(function (e) { return activityMatches([e.kind, e.displayName, e.summary, e.file].join(" ")); });
+    view.appendChild(h("h3", { text: "Recent activity (" + entries.length + ")" }));
+    view.appendChild(entries.length ? h("div", { class: "table-wrap" }, h("table", null,
+      h("thead", null, h("tr", null, ["Read", "Kind", "Display name", "What", "Where"].map(function (t) { return h("th", { text: t }); }))),
+      h("tbody", null, entries.slice(0, state.activityAll ? entries.length : 50).map(function (e) {
+        return h("tr", null,
+          h("td", { title: "Read " + localTime(e.atUtc) + (e.logTimeUtc ? "; log time " + localTime(e.logTimeUtc) : ""), text: P.relativeTime(e.atUtc, now) }),
+          h("td", null, h("span", { class: "pill kind-" + e.kind.replace(/\s+/g, "-"), text: e.kind })),
+          h("td", { text: e.displayName || "—" }),
+          h("td", { class: "notes", text: e.summary }),
+          h("td", { class: "mono", text: e.file + ":" + e.line }));
+      })))) : h("p", { class: "muted", text: a.entries.length ? "No activity matches the filter." : "Nothing read since the app started. Play or log in, and rows appear here within seconds." }));
+
+    // The list is newest first and can run to hundreds of rows; 50 covers a play session.
+    if (entries.length > 50) view.appendChild(h("p", null, h("button", { type: "button", onclick: function () { state.activityAll = !state.activityAll; render(); },
+      text: state.activityAll ? "Show the newest 50" : "Show all " + entries.length })));
+    var files = (state.ingest ? state.ingest.files : []).filter(function (f) { return f.exists; });
+    view.appendChild(h("h3", { text: "Last lines of a log" }));
+    // The tab re-renders every 3 s, so the choices live in state rather than only in the controls.
+    var chosenFile = state.tailFile || (state.tail && state.tail.file);
+    var fileSel = h("select", { id: "tail-file", "aria-label": "Log file", onchange: function (e) { state.tailFile = e.target.value; } }, files.map(function (f) {
+      return h("option", { value: f.name, text: f.name, selected: chosenFile ? chosenFile === f.name : /^Player\.log$/i.test(f.name) });
+    }));
+    var lineSel = h("select", { id: "tail-lines", "aria-label": "Lines", onchange: function (e) { state.tailLines = Number(e.target.value); } }, [30, 60, 200].map(function (n) {
+      return h("option", { value: String(n), text: n + " lines", selected: n === (state.tailLines || 60) });
+    }));
+    view.appendChild(h("div", { class: "toolbar" }, fileSel, lineSel,
+      h("button", { type: "button", disabled: !files.length, onclick: function () { loadTail(fileSel.value, lineSel.value); }, text: "Show lines" })));
+    if (state.tail && state.tail.error) view.appendChild(h("p", { class: "notice", text: "Could not read the file: " + state.tail.error }));
+    else if (state.tail) view.appendChild(h("pre", { class: "log-tail", "aria-label": "Last lines of " + state.tail.file, text: state.tail.lines.join("\n") || "(empty)" }));
+  }
+
   // Two measures of different scale get two charts, never two y-axes.
   function lineChart(title, points, series) {
     var wrap = h("div", { class: "chart" });
@@ -1191,6 +1293,20 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
     if (READ_ONLY) return;
     mutate("DELETE", "/api/exceptions/" + encodeURIComponent(displayName)).then(load, function (e) { alert("Could not remove the mapping: " + e.message); });
   }
+  function loadActivity() {
+    if (READ_ONLY) return Promise.resolve();
+    return api("/api/activity").then(function (a) {
+      state.activity = a;
+      state.activityAt = new Date().toISOString();
+      if (state.route.view === "activity") render();
+    }, function () { /* the next refresh tries again */ });
+  }
+  function loadTail(file, lines) {
+    if (READ_ONLY) return;
+    var q = "/api/logtail?lines=" + (lines || 60) + (file ? "&file=" + encodeURIComponent(file) : "");
+    api(q).then(function (t) { state.tail = t; render(); }, function (e) { state.tail = { error: String(e.message || e) }; render(); });
+  }
+  function toggleActivityAuto() { state.activityAuto = !state.activityAuto; render(); }
   function refreshStatus() {
     if (READ_ONLY) return Promise.resolve();
     return api("/api/status").then(function (s) {
@@ -1370,6 +1486,9 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
     CFG.densities.forEach(function (d) { cmds.push({ id: "density-" + d.id, group: "Settings", label: "Density: " + d.label + (display.density === d.id ? " (in use)" : ""), disabled: display.density === d.id, run: function () { chooseDensity(d.id); } }); });
     CFG.textSizes.forEach(function (t) { cmds.push({ id: "text-" + t.id, group: "Settings", label: "Text size: " + t.label + (display.text === t.id ? " (in use)" : ""), disabled: display.text === t.id, run: function () { chooseText(t.id); } }); });
     cmds.push({ id: "status-refresh", group: "Status", label: "Refresh ingestion status", disabled: READ_ONLY, run: refreshStatus });
+    cmds.push({ id: "activity-refresh", group: "Activity", label: "Refresh activity", disabled: READ_ONLY, run: function () { go("activity"); loadActivity(); } });
+    cmds.push({ id: "activity-auto", group: "Activity", label: "Auto-refresh every 3 s: " + (state.activityAuto ? "turn off" : "turn on"), disabled: READ_ONLY, run: toggleActivityAuto });
+    cmds.push({ id: "activity-tail", group: "Activity", label: "Show the last lines of the live log", disabled: READ_ONLY, run: function () { go("activity"); loadTail("", 60); } });
     var rv = state.data.review;
     if (rv && !READ_ONLY) {
       rv.ambiguous.forEach(function (a) {
@@ -1516,12 +1635,17 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
   if (READ_ONLY) document.title = CFG.appName + " (snapshot)";
   state.route = parseRoute();
   if (state.route.view === "account") state.selectedEmail = state.route.email;
+  if (state.route.view === "activity") loadActivity();
   renderFooter();
   loadChangelog();
   load();
   connectLive();
   // Polls run without changing data, so the status (last poll, file sizes) is refreshed on its own.
   if (!READ_ONLY) setInterval(function () { if (!document.hidden) refreshStatus(); }, 15000);
+  // The Activity tab changes on every poll, not only when data changes, so it refreshes on its own while open.
+  if (!READ_ONLY) setInterval(function () {
+    if (!document.hidden && state.route.view === "activity" && state.activityAuto && !document.querySelector(".scrim")) loadActivity();
+  }, 3000);
 })();
 </script>
 </body>

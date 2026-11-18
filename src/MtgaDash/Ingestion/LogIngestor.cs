@@ -16,7 +16,8 @@ public sealed record IngestResult(string Path, long BytesRead, bool Restarted, W
 /// Reads one log file from where the last poll stopped. Polling length and the first bytes' hash is the
 /// source of truth: FileSystemWatcher misses writes to a file another process holds open.
 /// </summary>
-public sealed class LogIngestor(Database db, ILogger logger, TimeZoneInfo? logTimeZone = null, Action<string, ParseWarning>? onWarning = null)
+public sealed class LogIngestor(Database db, ILogger logger, TimeZoneInfo? logTimeZone = null, Action<string, ParseWarning>? onWarning = null,
+    Action<string, LogEvent>? onEvent = null)
 {
     /// <summary>The prefix hashed to tell a rotated live log from a grown one.</summary>
     public const int HashBytes = 4096;
@@ -117,6 +118,8 @@ public sealed class LogIngestor(Database db, ILogger logger, TimeZoneInfo? logTi
 
     private Writer.Counts Commit(string path, List<LogEvent> events, LogParserState state, long offset, string prefixHash, string lastWrite)
     {
+        if (onEvent is not null)
+            foreach (var e in events) onEvent(path, e);
         using var c = db.Open();
         using var tx = c.BeginTransaction();
         var counts = Writer.Apply(c, tx, events, path, w =>

@@ -42,10 +42,11 @@ public static class AppHost
         builder.Services.AddSingleton<ChangeNotifier>();
         builder.Services.AddSingleton(sp => new ExceptionStore(ExceptionsPath(options), sp.GetRequiredService<ILogger<ExceptionStore>>()));
         builder.Services.AddSingleton<StatusTracker>();
+        builder.Services.AddSingleton<ActivityLog>();
         builder.Services.AddSingleton(sp => new CardNames(options.CardDbPath, sp.GetRequiredService<ILogger<CardNames>>()));
         builder.Services.AddSingleton(sp => new Queries(db, sp.GetRequiredService<CardNames>(), sp.GetRequiredService<ExceptionStore>()));
         builder.Services.AddSingleton(sp => new LogIngestor(db, sp.GetRequiredService<ILogger<LogIngestor>>(),
-            onWarning: sp.GetRequiredService<StatusTracker>().Warning));
+            onWarning: sp.GetRequiredService<StatusTracker>().Warning, onEvent: sp.GetRequiredService<ActivityLog>().Record));
         builder.Services.AddSingleton<PageRenderer>();
         builder.Services.AddSingleton<StaticExporter>();
         builder.Services.AddSingleton<IngestionService>();
@@ -98,6 +99,25 @@ public static class AppHost
         api.MapGet("/review", (Queries q) => q.Review());
         api.MapGet("/statuses", (Queries q) => q.Statuses());
         api.MapGet("/status", (StatusTracker s) => s.Snapshot());
+        api.MapGet("/activity", (ActivityLog a, Queries q) => new { entries = a.Entries(), messages = a.Messages(), players = q.Players() });
+        // Only a file the app already reads can be tailed, so the name cannot be used to read anything else.
+        api.MapGet("/logtail", (StatusTracker s, string? file, int? lines) =>
+        {
+            var files = s.Snapshot().Files.Where(f => f.Exists).ToList();
+            var live = MtgaDashOptions.Resolve(options.LiveLogPath);
+            var target = string.IsNullOrEmpty(file)
+                ? files.FirstOrDefault(f => string.Equals(f.Path, live, StringComparison.OrdinalIgnoreCase)) ?? files.LastOrDefault()
+                : files.FirstOrDefault(f => string.Equals(f.Name, file, StringComparison.OrdinalIgnoreCase));
+            if (target is null) return Results.NotFound();
+            try
+            {
+                return Results.Ok(new { file = target.Name, path = target.Path, length = target.Length, lines = ActivityLog.Tail(target.Path, Math.Clamp(lines ?? 60, 1, 500)) });
+            }
+            catch (IOException ex)
+            {
+                return Results.Problem(ex.Message, statusCode: StatusCodes.Status409Conflict);
+            }
+        });
 
         var write = api.MapGroup("").AddEndpointFilter(RequireAppHeader);
         write.MapPost("/reimport", (IngestionService s) => Results.Ok(new { imported = s.ImportAccounts() }));

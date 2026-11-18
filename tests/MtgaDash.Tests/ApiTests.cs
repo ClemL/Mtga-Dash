@@ -37,6 +37,8 @@ public sealed class ApiTests
             $"--MtgaDash:ExportFolder={Path.Combine(_folder, "export")}",
             "--MtgaDash:WatchLiveLog=false",
             "--MtgaDash:PollSeconds=1",
+            // CI has a desktop: without this every test run would open a browser.
+            "--MtgaDash:OpenBrowser=false",
             "--Logging:LogLevel:Default=Warning",
         ]);
         await _app.StartAsync();

@@ -48,6 +48,7 @@ public static class AppHost
         builder.Services.AddSingleton(sp => new LogIngestor(db, sp.GetRequiredService<ILogger<LogIngestor>>(),
             onWarning: sp.GetRequiredService<StatusTracker>().Warning, onEvent: sp.GetRequiredService<ActivityLog>().Record));
         builder.Services.AddSingleton<PageRenderer>();
+        builder.Services.AddSingleton<StartPage>();
         builder.Services.AddSingleton<StaticExporter>();
         builder.Services.AddSingleton<IngestionService>();
         builder.Services.AddSingleton<Game.GameLauncher>();
@@ -62,6 +63,8 @@ public static class AppHost
             options.WatchLiveLog ? MtgaDashOptions.Resolve(options.LiveLogPath) : "(off)", ExceptionsPath(options));
 
         MapEndpoints(app, options);
+        // app.Urls holds the real address only once Kestrel is listening (port 0 in tests picks one then).
+        app.Lifetime.ApplicationStarted.Register(() => app.Services.GetRequiredService<StartPage>().Announce(app.Urls));
         return app;
     }
 

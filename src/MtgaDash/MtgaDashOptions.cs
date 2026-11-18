@@ -28,6 +28,12 @@ public sealed class MtgaDashOptions
     /// </summary>
     public string ExceptionsPath { get; set; } = "";
 
+    /// <summary>Open the dashboard in the default browser once it is listening (only where there is a desktop).</summary>
+    public bool OpenBrowser { get; set; } = true;
+
+    /// <summary>The page opened at startup and written to the console; the Activity tab by default.</summary>
+    public string StartPage { get; set; } = "/#/activity";
+
     /// <summary>Start MTGA when the dashboard starts, unless it is already running.</summary>
     public bool LaunchGame { get; set; }
 

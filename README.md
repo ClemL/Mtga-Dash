@@ -67,6 +67,8 @@ Any setting can be overridden on the command line, e.g. `--MtgaDash:Port=5090`.
 | `AllowLan` | `false` | Listen on `0.0.0.0` instead of `localhost`. |
 | `Port` | `5080` | HTTP port. |
 | `CardDbPath` | *(empty)* | MTGA's card database for card names; see below. |
+| `OpenBrowser` | `true` | Open the dashboard in your default browser once it is running (only where there is a desktop). |
+| `StartPage` | `/#/activity` | The page opened at startup and written to the console, e.g. `/#/accounts`. |
 | `LaunchGame` | `false` | Start MTGA when the dashboard starts, unless it is already running; see below. |
 | `GamePath` | `C:\Program Files\Wizards of the Coast\MTGA\MTGA.exe` | The game to start, or a launcher URI such as `steam://rungameid/2141910`. |
 | `ExceptionsPath` | *(empty)* | Where Review-tab mappings are saved; empty means `account-exceptions.json` beside the database. |
@@ -134,6 +136,18 @@ Register a Task Scheduler task that starts it hidden at logon (from an elevated 
 The task runs as you with logon type S4U, so no window appears, restarts the app up to three times on
 failure and never times out. `-Unregister` removes it. The app also supports running as a Windows service
 (`sc.exe create MtgaDash binPath= "C:\dev\mtga\app\MtgaDash.exe"`), but the logon task is the tested path.
+
+## What happens at startup
+
+Once the dashboard is listening it writes its address to the console window:
+
+```text
+  MtgaDash is running: http://localhost:5080/#/activity
+```
+
+and opens that page (the Activity tab, setting `StartPage`) in your default browser. Set `"OpenBrowser": false`
+to stop that. The hidden logon task has no desktop, so there the browser is skipped and the console line is
+the only output; register the task with `-Interactive` (below) to get the browser at logon too.
 
 ## Start MTGA with the dashboard
 

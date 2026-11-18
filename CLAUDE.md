@@ -44,7 +44,9 @@ src/MtgaDash/
   Data/         Database (schema + migrations), Writer (upserts, matching), Queries (read side)
   Accounts/     AccountMatcher (pure), AccountsCsv, AccountExceptions (compiled overrides),
                 ExceptionStore (Review-tab overrides in account-exceptions.json)
-  Cards/        CardNames: optional card names from MTGA's own SQLite card DB, schema found at runtime
+  Cards/        CardNames: optional names, rarity and set from MTGA's own SQLite card DB, schema found at
+                runtime; KnownCollection (pure): cards owned, as a minimum, from saved deck lists
+  Game/         GameLauncher: starts MTGA at startup (LaunchGame) or from the Status tab, never twice
   Web/          PageRenderer (fills index.html placeholders), StaticExporter, DisplayOptions, BuildInfo
   wwwroot/      index.html (the whole UI), updates.txt (changelog)
 tests/MtgaDash.Tests/   MSTest; Fixtures.cs builds synthetic logs
@@ -57,6 +59,9 @@ tools/Register-MtgaDashTask.ps1   logon task for the published exe
   injected. Log-format changes belong there, with a test in `LogParserTests`.
 * **The parser reports every message, read or not** (`MessageSeen`), so the Activity tab shows what MTGA
   writes. When you add support for a message, check its Activity row turns from "not read" to read.
+* **Owned counts are a minimum, from saved decks.** `KnownCollection` takes the most copies in any one deck
+  version, never a sum across decks. MTGA's rarity numbers are mapped in `CardNames.RarityName`; an
+  unknown value stays null rather than guessed.
 * **Every write is an idempotent upsert on a natural key.** Re-ingesting a file, or the live log and its
   archived copy, must change nothing. `IngestionTests.Dump` compares whole databases: use it for new tables.
 * **Matching is recomputed from scratch** (`Writer.RunMatching`) on startup, on import, when a new display
@@ -106,6 +111,10 @@ parameter in a query record throws at runtime (`DeckRow.IsPrecon` is `long` for 
 **Host filtering reads `AllowedHosts` from configuration.** `AppHost` sets it to the loopback names unless
 `AllowLan` is on; a request with any other `Host` gets 400. Tests must address the app as `127.0.0.1`
 (port 0 binds there, because Kestrel cannot pick a free port for `localhost`).
+
+**A hidden (S4U) task or a service has no desktop.** A GUI app started from there runs invisibly, so
+`GameLauncher` refuses when `Environment.UserInteractive` is false; the logon task's `-Interactive` switch is
+the fix. Tests replace `GameLauncher.Start`: never launch a real process from a test.
 
 **`nuget.config` must keep `<clear />`.** The owner's global config has a private Azure Artifacts feed that
 answers 401 and breaks restores.

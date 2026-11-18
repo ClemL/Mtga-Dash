@@ -50,6 +50,8 @@ public static class AppHost
         builder.Services.AddSingleton<PageRenderer>();
         builder.Services.AddSingleton<StaticExporter>();
         builder.Services.AddSingleton<IngestionService>();
+        builder.Services.AddSingleton<Game.GameLauncher>();
+        builder.Services.AddHostedService(sp => sp.GetRequiredService<Game.GameLauncher>());
         builder.Services.AddHostedService(sp => sp.GetRequiredService<IngestionService>());
         builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase);
 
@@ -98,7 +100,10 @@ public static class AppHost
         api.MapGet("/totals", (Queries q) => q.Totals());
         api.MapGet("/review", (Queries q) => q.Review());
         api.MapGet("/statuses", (Queries q) => q.Statuses());
+        api.MapGet("/cards", (Queries q, int? minCopies, string? rarity) =>
+            q.Cards(Math.Clamp(minCopies ?? 3, 1, 99), rarity?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)));
         api.MapGet("/status", (StatusTracker s) => s.Snapshot());
+        api.MapGet("/game", (Game.GameLauncher g) => g.Status());
         api.MapGet("/activity", (ActivityLog a, Queries q) => new { entries = a.Entries(), messages = a.Messages(), players = q.Players() });
         // Only a file the app already reads can be tailed, so the name cannot be used to read anything else.
         api.MapGet("/logtail", (StatusTracker s, string? file, int? lines) =>
@@ -120,6 +125,11 @@ public static class AppHost
         });
 
         var write = api.MapGroup("").AddEndpointFilter(RequireAppHeader);
+        write.MapPost("/game/launch", (Game.GameLauncher g) =>
+        {
+            var (started, message) = g.Launch();
+            return Results.Ok(new { started, message });
+        });
         write.MapPost("/reimport", (IngestionService s) => Results.Ok(new { imported = s.ImportAccounts() }));
         write.MapPost("/export", (StaticExporter e) =>
         {

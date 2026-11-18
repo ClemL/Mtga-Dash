@@ -218,10 +218,16 @@ kbd {
 .tabs .count.issue { color: var(--bad); border: 1px solid var(--bad); background: none; font-weight: 600; }
 .issue-line { color: var(--bad); font-weight: 600; }
 .map-input { flex: 1 1 14em; min-width: 0; }
+/* A full install path in this message must wrap on a phone, not widen the page. */
+.cannot-start { color: var(--warn); font-weight: 600; flex: 1 1 100%; min-width: 0; overflow-wrap: anywhere; }
 .pill.kind-inventory, .pill.kind-login { color: var(--good); border-color: var(--good); }
 .pill.kind-not-read { color: var(--warn); border-color: var(--warn); font-weight: 600; }
 .pill.kind-warning { color: var(--bad); border-color: var(--bad); font-weight: 600; }
 tr.suspicious td { background: var(--hover); }
+.pill.rarity-mythic { color: var(--bad); border-color: var(--bad); font-weight: 600; }
+.pill.rarity-rare { color: var(--warn); border-color: var(--warn); font-weight: 600; }
+.inline-checks { border: 0; margin: 0; padding: 0; display: inline-flex; flex-wrap: wrap; gap: var(--gap); }
+.inline-checks label { display: inline-flex; align-items: center; gap: 4px; text-transform: capitalize; }
 tr.suspicious td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
 .log-tail {
   font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
@@ -548,6 +554,13 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
     activityFilter: "",
     activityAuto: true,
     tail: null,
+    cards: null,
+    game: null,
+    cardsMin: 3,
+    cardsRarities: ["mythic", "rare"],
+    cardsSearch: "",
+    ownedMin: 3,
+    ownedRareOnly: true,
     loaded: false,
     detail: null,
     updatedAt: null,
@@ -627,14 +640,19 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
   function load() {
     if (READ_ONLY) {
       state.data = { accounts: EMBEDDED.accounts || [], totals: EMBEDDED.totals, review: EMBEDDED.review, statuses: EMBEDDED.statuses || [] };
+      state.cards = EMBEDDED.cards || null;
+      applyOwnedCounts();
       state.loaded = true;
       state.updatedAt = EMBEDDED.generatedAtUtc;
       render();
       return Promise.resolve();
     }
-    return Promise.all([api("/api/accounts"), api("/api/totals"), api("/api/review"), api("/api/statuses"), api("/api/status")]).then(function (r) {
+    return Promise.all([api("/api/accounts"), api("/api/totals"), api("/api/review"), api("/api/statuses"), api("/api/status"), api(cardsUrl())]).then(function (r) {
       state.data = { accounts: r[0], totals: r[1], review: r[2], statuses: r[3] };
       state.ingest = r[4];
+      state.cards = r[5];
+      loadGame();
+      applyOwnedCounts();
       state.loaded = true;
       state.updatedAt = new Date().toISOString();
       if (state.route.view === "account") return loadDetail(state.route.email);
@@ -698,6 +716,7 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
     { id: "review", label: "Review", key: "4" },
     { id: "status", label: "Status", key: "5" },
     { id: "activity", label: "Activity", key: "6" },
+    { id: "cards", label: "Cards", key: "7" },
   ].filter(function (v) { return !(READ_ONLY && (v.id === "status" || v.id === "activity")); }); // the export has no ingestion to report on
 
   function filteredAccounts() {
@@ -737,6 +756,7 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
     else if (r === "review") renderReview(view);
     else if (r === "status") renderStatus(view);
     else if (r === "activity") renderActivity(view);
+    else if (r === "cards") renderCards(view);
     else if (r === "account") renderDetail(view);
     // Re-rendering on a live update must not steal the caret from a filter box or jump the page.
     if (focusedId) {
@@ -798,6 +818,7 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
     { key: "wcMythic", label: "M", num: true, title: "Mythic wildcards" },
     { key: "boosterTotal", label: "Boosters", num: true },
     { key: "customDeckCount", label: "Decks", num: true, title: "Custom (non-precon) decks" },
+    { key: "ownedCount", label: ownedLabel, num: true, title: "Cards known to be owned at this many copies or more, from saved decks (a minimum). Set on the Cards tab." },
     { key: "notes", label: "Notes" },
   ];
 
@@ -843,7 +864,7 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
       var sorted = state.sort.key === c.key;
       return h("th", { class: c.num ? "num" : null, scope: "col", "aria-sort": sorted ? (state.sort.dir > 0 ? "ascending" : "descending") : null },
         h("button", { type: "button", title: c.title || ("Sort by " + c.label), onclick: function () { setSort(c.key); } },
-          c.label, sorted ? (state.sort.dir > 0 ? "▲" : "▼") : null));
+          typeof c.label === "function" ? c.label() : c.label, sorted ? (state.sort.dir > 0 ? "▲" : "▼") : null));
     }));
     var body = h("tbody");
     rows.forEach(function (a) {
@@ -864,6 +885,7 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
         h("td", { class: "num", text: fmt(a.wcMythic) }),
         h("td", { class: "num", text: a.snapshotId == null ? "—" : fmt(a.boosterTotal) }),
         h("td", { class: "num", text: a.displayName ? fmt(a.customDeckCount) : "—" }),
+        h("td", { class: "num", text: a.ownedCount == null ? "—" : fmt(a.ownedCount) }),
         h("td", { class: "notes", text: [a.notes, a.miscNotes].filter(Boolean).join(" · ") })));
     });
     view.appendChild(h("div", { class: "table-wrap" }, h("table", null, h("thead", null, head), body)));
@@ -993,6 +1015,14 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
       h("span", null, "Last poll ", h("strong", { text: P.relativeTime(s.lastPollUtc, now) || "not yet" }),
         s.lastPollUtc ? h("span", { class: "muted", text: " · took " + s.lastPollMs + " ms · every " + s.pollSeconds + " s" }) : null),
       h("button", { type: "button", onclick: refreshStatus, text: "Refresh" })));
+    var g = state.game;
+    if (g) {
+      view.appendChild(h("div", { class: "toolbar" },
+        h("span", null, "Game: ", h("strong", { text: g.running ? "MTGA is running" : "MTGA is not running" })),
+        h("button", { type: "button", disabled: g.running || !g.canLaunch, title: g.cannotLaunchReason || g.path, onclick: launchGame, text: "Start MTGA" }),
+        h("span", { class: "muted", text: g.enabled ? "starts with the dashboard" : "LaunchGame is off: starts only from here" }),
+        !g.canLaunch && g.cannotLaunchReason ? h("span", { class: "cannot-start", text: "Cannot start: " + g.cannotLaunchReason }) : null));
+    }
     if (s.issues.length) {
       view.appendChild(h("ul", { class: "list-plain card issues" }, s.issues.map(function (i) { return h("li", { class: "issue-line", text: i }); })));
     } else {
@@ -1101,6 +1131,93 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
       h("button", { type: "button", disabled: !files.length, onclick: function () { loadTail(fileSel.value, lineSel.value); }, text: "Show lines" })));
     if (state.tail && state.tail.error) view.appendChild(h("p", { class: "notice", text: "Could not read the file: " + state.tail.error }));
     else if (state.tail) view.appendChild(h("pre", { class: "log-tail", "aria-label": "Last lines of " + state.tail.file, text: state.tail.lines.join("\n") || "(empty)" }));
+  }
+
+  var RARITIES = ["mythic", "rare", "uncommon", "common"];
+  function cardLabel(c) { return c.name ? c.name : "#" + c.cardId; }
+  function rarityPill(r) { return r ? h("span", { class: "pill rarity-" + r, text: r }) : h("span", { class: "muted", text: "?" }); }
+  function cardDbNotice(rarityKnown, status) {
+    if (rarityKnown) return null;
+    return h("p", { class: "notice", text: "Rarity and card names need MTGA's card database: set CardDbPath (see README). Until then every card is listed by id, basic lands included."
+      + (status ? " Card database: " + status + "." : "") });
+  }
+
+  function renderCards(view) {
+    var c = state.cards;
+    view.appendChild(h("p", { class: "muted", text: "Cards each account is known to own, from every deck it ever saved: a deck with 4 copies proves at least 4. Cards never saved in a deck are not counted, so every number is a minimum." }));
+    var controls = h("div", { class: "toolbar" },
+      h("input", { type: "search", id: "cards-filter", placeholder: "Filter by card, set or account…", "aria-label": "Filter cards", value: state.cardsSearch,
+        oninput: function (e) { state.cardsSearch = e.target.value; render(); } }),
+      h("label", null, "At least",
+        h("select", { id: "cards-min", disabled: READ_ONLY, "aria-label": "Minimum copies", onchange: function (e) { setCardsMin(Number(e.target.value)); } },
+          [1, 2, 3, 4].map(function (n) { return h("option", { value: String(n), text: n + (n === 1 ? " copy" : " copies"), selected: n === state.cardsMin }); }))),
+      c && c.rarityKnown ? h("fieldset", { class: "inline-checks" }, h("legend", { class: "visually-hidden", text: "Rarities" }),
+        RARITIES.map(function (rar) {
+          return h("label", null, h("input", { type: "checkbox", disabled: READ_ONLY, checked: state.cardsRarities.indexOf(rar) >= 0, onchange: function () { toggleCardsRarity(rar); } }), rar);
+        })) : null);
+    view.appendChild(controls);
+    if (!c) { view.appendChild(h("p", { class: "muted", text: "Loading…" })); return; }
+    var notice = cardDbNotice(c.rarityKnown, c.cardDbStatus);
+    if (notice) view.appendChild(notice);
+
+    var q = state.cardsSearch.trim().toLowerCase();
+    var cards = c.cards.filter(function (x) {
+      if (!q) return true;
+      var hay = [cardLabel(x), x.set || "", x.rarity || "", String(x.cardId)].concat(x.holders.map(function (hd) { return hd.displayName + " " + (hd.email || ""); })).join(" ").toLowerCase();
+      return q.split(/\s+/).every(function (t) { return hay.indexOf(t) >= 0; });
+    });
+    var accounts = Object.keys(c.perAccount).filter(function (k) { return c.perAccount[k] > 0; }).length;
+    view.appendChild(h("p", { class: "muted", text: fmt(cards.length) + " cards held at " + c.minCopies + "+ copies by " + fmt(accounts) + " of " + fmt(c.accountsWithDecks) + " accounts with saved decks" }));
+    if (!c.accountsWithDecks) {
+      view.appendChild(h("p", { class: "notice", text: "No saved deck lists yet. A deck's cards are logged when you save it in MTGA's deck builder (open a deck, change nothing or anything, and press Done)." }));
+      return;
+    }
+    if (!cards.length) { view.appendChild(h("p", { class: "muted", text: "No card matches." })); return; }
+    view.appendChild(h("div", { class: "table-wrap" }, h("table", null,
+      h("thead", null, h("tr", null, ["Card", "Set", "Rarity", "Accounts", "Held by (copies)"].map(function (t, i) { return h("th", { class: i === 3 ? "num" : null, text: t }); }))),
+      h("tbody", null, cards.slice(0, 500).map(function (x) {
+        return h("tr", null,
+          h("td", { title: "Card id " + x.cardId, text: cardLabel(x) }),
+          h("td", { text: x.set || "—" }),
+          h("td", null, rarityPill(x.rarity)),
+          h("td", { class: "num", text: fmt(x.holders.length) }),
+          h("td", { class: "notes" }, x.holders.map(function (hd, i) {
+            var label = hd.displayName + " ×" + hd.copies;
+            return [i ? ", " : null, hd.email ? h("a", { href: "#/account/" + encodeURIComponent(hd.email), text: label }) : h("span", { title: "Not matched to an account", text: label })];
+          })));
+      })))));
+    if (cards.length > 500) view.appendChild(h("p", { class: "muted", text: "Showing the first 500; filter to narrow." }));
+  }
+
+  function renderKnownCards(d) {
+    var section = h("section", { class: "card" }, h("h3", { text: "Known cards (from saved decks)" }));
+    var all = d.knownCards || [];
+    if (!all.length) {
+      section.appendChild(h("p", { class: "muted", text: "No saved deck lists for this account yet. Save a deck in MTGA's deck builder and its cards are counted here." }));
+      return section;
+    }
+    var shown = all.filter(function (k) {
+      return k.copies >= state.ownedMin && (!d.cardRarityKnown || !state.ownedRareOnly || k.rarity === "rare" || k.rarity === "mythic");
+    });
+    section.appendChild(h("div", { class: "toolbar" },
+      h("label", null, "At least",
+        h("select", { "aria-label": "Minimum copies", onchange: function (e) { state.ownedMin = Number(e.target.value); render(); } },
+          [1, 2, 3, 4].map(function (n) { return h("option", { value: String(n), text: n + (n === 1 ? " copy" : " copies"), selected: n === state.ownedMin }); }))),
+      d.cardRarityKnown ? h("label", null, h("input", { type: "checkbox", checked: state.ownedRareOnly, onchange: function () { state.ownedRareOnly = !state.ownedRareOnly; render(); } }), "Rares and mythics only") : null,
+      h("span", { class: "muted", text: fmt(shown.length) + " of " + fmt(all.length) + " known cards" })));
+    var notice = cardDbNotice(d.cardRarityKnown, null);
+    if (notice) section.appendChild(notice);
+    section.appendChild(shown.length ? h("div", { class: "table-wrap" }, h("table", null,
+      h("thead", null, h("tr", null, ["Card", "Set", "Rarity", "Copies (at least)", "Seen in"].map(function (t, i) { return h("th", { class: i === 3 ? "num" : null, text: t }); }))),
+      h("tbody", null, shown.map(function (k) {
+        return h("tr", null,
+          h("td", { title: "Card id " + k.cardId, text: cardLabel(k) }),
+          h("td", { text: k.set || "—" }),
+          h("td", null, rarityPill(k.rarity)),
+          h("td", { class: "num", text: String(k.copies) }),
+          h("td", { class: "notes", text: k.decks + (k.decks === 1 ? " deck" : " decks") + (k.deckNames.length ? ": " + k.deckNames.join(", ") + (k.decks > k.deckNames.length ? ", …" : "") : "") }));
+      })))) : h("p", { class: "muted", text: "No known card at these settings." }));
+    return section;
   }
 
   // Two measures of different scale get two charts, never two y-axes.
@@ -1255,6 +1372,7 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
     });
     if (d.preconCount) decks.appendChild(h("details", null, h("summary", { class: "muted", text: d.preconCount + " precon decks (hidden)" }),
       h("p", { class: "muted", text: "Precons are the starter decks every account gets; they are counted but not listed." })));
+    view.appendChild(renderKnownCards(d));
     view.appendChild(h("h3", { text: "Decks" }));
     view.appendChild(decks);
   }
@@ -1293,6 +1411,28 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
     if (READ_ONLY) return;
     mutate("DELETE", "/api/exceptions/" + encodeURIComponent(displayName)).then(load, function (e) { alert("Could not remove the mapping: " + e.message); });
   }
+  function cardsUrl() {
+    return "/api/cards?minCopies=" + state.cardsMin + "&rarity=" + encodeURIComponent(state.cardsRarities.join(","));
+  }
+  // The Accounts table's owned-cards column is a per-account count from the cards report, sortable like any other.
+  function applyOwnedCounts() {
+    var per = state.cards ? state.cards.perAccount : {};
+    state.data.accounts.forEach(function (a) { a.ownedCount = a.displayName && per[a.displayName] != null ? per[a.displayName] : null; });
+  }
+  function loadCards() {
+    if (READ_ONLY) return Promise.resolve();
+    return api(cardsUrl()).then(function (c) { state.cards = c; applyOwnedCounts(); render(); }, function () { /* keep the last report */ });
+  }
+  function setCardsMin(n) { state.cardsMin = n; loadCards(); }
+  function toggleCardsRarity(rarity) {
+    var i = state.cardsRarities.indexOf(rarity);
+    if (i >= 0) { if (state.cardsRarities.length > 1) state.cardsRarities.splice(i, 1); } else state.cardsRarities.push(rarity);
+    loadCards();
+  }
+  function ownedLabel() {
+    return state.cards && state.cards.rarityKnown ? "R/M " + state.cardsMin + "+" : "Cards " + state.cardsMin + "+";
+  }
+
   function loadActivity() {
     if (READ_ONLY) return Promise.resolve();
     return api("/api/activity").then(function (a) {
@@ -1307,7 +1447,20 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
     api(q).then(function (t) { state.tail = t; render(); }, function (e) { state.tail = { error: String(e.message || e) }; render(); });
   }
   function toggleActivityAuto() { state.activityAuto = !state.activityAuto; render(); }
+  function loadGame() {
+    if (READ_ONLY) return Promise.resolve();
+    return api("/api/game").then(function (g) { state.game = g; if (state.route.view === "status") render(); }, function () { /* next refresh */ });
+  }
+  function launchGame() {
+    if (READ_ONLY) return;
+    mutate("POST", "/api/game/launch").then(function (r) {
+      if (!r.started) alert(r.message);
+      setTimeout(loadGame, 3000); // the process takes a moment to appear
+      loadGame();
+    }, function (e) { alert("Could not start MTGA: " + e.message); });
+  }
   function refreshStatus() {
+    loadGame();
     if (READ_ONLY) return Promise.resolve();
     return api("/api/status").then(function (s) {
       state.ingest = s;
@@ -1474,7 +1627,7 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
     cmds.push({ id: "focus-filter", group: "Table", label: "Filter the accounts table", hotkey: "F", run: focusTableFilter });
     cmds.push({ id: "clear-filter", group: "Table", label: "Clear the filter", disabled: !state.filter, run: function () { setFilter(""); } });
     cmds.push({ id: "all-statuses", group: "Table", label: "Show all statuses", disabled: !state.status, run: function () { state.status = ""; render(); } });
-    [["lastLoginUtc", "last login"], ["gems", "gems"], ["gold", "gold"], ["wcRare", "rare wildcards"], ["wcMythic", "mythic wildcards"], ["customDeckCount", "custom decks"], ["email", "email"]].forEach(function (p) {
+    [["lastLoginUtc", "last login"], ["gems", "gems"], ["gold", "gold"], ["wcRare", "rare wildcards"], ["wcMythic", "mythic wildcards"], ["customDeckCount", "custom decks"], ["ownedCount", "owned cards at the Cards tab's copies"], ["email", "email"]].forEach(function (p) {
       cmds.push({ id: "sort-" + p[0], group: "Table", label: "Sort by " + p[1] + (state.sort.key === p[0] ? (state.sort.dir > 0 ? ": switch to descending" : ": switch to ascending") : ""), run: function () { go("accounts"); setSort(p[0]); } });
     });
     cmds.push({ id: "copy-stale", group: "Stale", label: "Copy all stale emails (" + staleAccounts().length + ")", disabled: !staleAccounts().length, run: function () { copyText(staleAccounts().map(function (a) { return a.email; }).join("\n")); } });
@@ -1485,7 +1638,16 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
     CFG.themes.forEach(function (t) { cmds.push({ id: "theme-" + t.id, group: "Settings", label: "Theme: " + t.label + (display.theme === t.id ? " (in use)" : ""), disabled: display.theme === t.id, run: function () { chooseTheme(t.id); } }); });
     CFG.densities.forEach(function (d) { cmds.push({ id: "density-" + d.id, group: "Settings", label: "Density: " + d.label + (display.density === d.id ? " (in use)" : ""), disabled: display.density === d.id, run: function () { chooseDensity(d.id); } }); });
     CFG.textSizes.forEach(function (t) { cmds.push({ id: "text-" + t.id, group: "Settings", label: "Text size: " + t.label + (display.text === t.id ? " (in use)" : ""), disabled: display.text === t.id, run: function () { chooseText(t.id); } }); });
+    cmds.push({ id: "game-launch", group: "Game", label: state.game && state.game.running ? "Start MTGA (already running)" : "Start MTGA",
+      disabled: READ_ONLY || !state.game || state.game.running || !state.game.canLaunch, run: launchGame });
     cmds.push({ id: "status-refresh", group: "Status", label: "Refresh ingestion status", disabled: READ_ONLY, run: refreshStatus });
+    [1, 2, 3, 4].forEach(function (n) {
+      cmds.push({ id: "cards-min-" + n, group: "Cards", label: "Show cards held at " + n + "+ copies", disabled: READ_ONLY || state.cardsMin === n, run: function () { go("cards"); setCardsMin(n); } });
+    });
+    if (state.cards && state.cards.rarityKnown) RARITIES.forEach(function (rar) {
+      var on = state.cardsRarities.indexOf(rar) >= 0;
+      cmds.push({ id: "cards-rarity-" + rar, group: "Cards", label: (on ? "Hide " : "Include ") + rar + "s", disabled: READ_ONLY || (on && state.cardsRarities.length === 1), run: function () { go("cards"); toggleCardsRarity(rar); } });
+    });
     cmds.push({ id: "activity-refresh", group: "Activity", label: "Refresh activity", disabled: READ_ONLY, run: function () { go("activity"); loadActivity(); } });
     cmds.push({ id: "activity-auto", group: "Activity", label: "Auto-refresh every 3 s: " + (state.activityAuto ? "turn off" : "turn on"), disabled: READ_ONLY, run: toggleActivityAuto });
     cmds.push({ id: "activity-tail", group: "Activity", label: "Show the last lines of the live log", disabled: READ_ONLY, run: function () { go("activity"); loadTail("", 60); } });

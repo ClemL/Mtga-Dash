@@ -45,6 +45,7 @@ public sealed class StaticExporter : IDisposable
             totals = _queries.Totals(),
             review = _queries.Review(),
             statuses = _queries.Statuses(),
+            cards = _queries.Cards(),
             details = accounts.ToDictionary(a => a.Email, a => _queries.Account(a.Email)),
         };
     }

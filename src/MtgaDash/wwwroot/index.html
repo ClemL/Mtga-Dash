@@ -218,6 +218,8 @@ kbd {
 .tabs .count.issue { color: var(--bad); border: 1px solid var(--bad); background: none; font-weight: 600; }
 .issue-line { color: var(--bad); font-weight: 600; }
 .map-input { flex: 1 1 14em; min-width: 0; }
+/* A full install path in this message must wrap on a phone, not widen the page. */
+.cannot-start { color: var(--warn); font-weight: 600; flex: 1 1 100%; min-width: 0; overflow-wrap: anywhere; }
 .pill.kind-inventory, .pill.kind-login { color: var(--good); border-color: var(--good); }
 .pill.kind-not-read { color: var(--warn); border-color: var(--warn); font-weight: 600; }
 .pill.kind-warning { color: var(--bad); border-color: var(--bad); font-weight: 600; }
@@ -553,6 +555,7 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
     activityAuto: true,
     tail: null,
     cards: null,
+    game: null,
     cardsMin: 3,
     cardsRarities: ["mythic", "rare"],
     cardsSearch: "",
@@ -648,6 +651,7 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
       state.data = { accounts: r[0], totals: r[1], review: r[2], statuses: r[3] };
       state.ingest = r[4];
       state.cards = r[5];
+      loadGame();
       applyOwnedCounts();
       state.loaded = true;
       state.updatedAt = new Date().toISOString();
@@ -1011,6 +1015,14 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
       h("span", null, "Last poll ", h("strong", { text: P.relativeTime(s.lastPollUtc, now) || "not yet" }),
         s.lastPollUtc ? h("span", { class: "muted", text: " · took " + s.lastPollMs + " ms · every " + s.pollSeconds + " s" }) : null),
       h("button", { type: "button", onclick: refreshStatus, text: "Refresh" })));
+    var g = state.game;
+    if (g) {
+      view.appendChild(h("div", { class: "toolbar" },
+        h("span", null, "Game: ", h("strong", { text: g.running ? "MTGA is running" : "MTGA is not running" })),
+        h("button", { type: "button", disabled: g.running || !g.canLaunch, title: g.cannotLaunchReason || g.path, onclick: launchGame, text: "Start MTGA" }),
+        h("span", { class: "muted", text: g.enabled ? "starts with the dashboard" : "LaunchGame is off: starts only from here" }),
+        !g.canLaunch && g.cannotLaunchReason ? h("span", { class: "cannot-start", text: "Cannot start: " + g.cannotLaunchReason }) : null));
+    }
     if (s.issues.length) {
       view.appendChild(h("ul", { class: "list-plain card issues" }, s.issues.map(function (i) { return h("li", { class: "issue-line", text: i }); })));
     } else {
@@ -1435,7 +1447,20 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
     api(q).then(function (t) { state.tail = t; render(); }, function (e) { state.tail = { error: String(e.message || e) }; render(); });
   }
   function toggleActivityAuto() { state.activityAuto = !state.activityAuto; render(); }
+  function loadGame() {
+    if (READ_ONLY) return Promise.resolve();
+    return api("/api/game").then(function (g) { state.game = g; if (state.route.view === "status") render(); }, function () { /* next refresh */ });
+  }
+  function launchGame() {
+    if (READ_ONLY) return;
+    mutate("POST", "/api/game/launch").then(function (r) {
+      if (!r.started) alert(r.message);
+      setTimeout(loadGame, 3000); // the process takes a moment to appear
+      loadGame();
+    }, function (e) { alert("Could not start MTGA: " + e.message); });
+  }
   function refreshStatus() {
+    loadGame();
     if (READ_ONLY) return Promise.resolve();
     return api("/api/status").then(function (s) {
       state.ingest = s;
@@ -1613,6 +1638,8 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
     CFG.themes.forEach(function (t) { cmds.push({ id: "theme-" + t.id, group: "Settings", label: "Theme: " + t.label + (display.theme === t.id ? " (in use)" : ""), disabled: display.theme === t.id, run: function () { chooseTheme(t.id); } }); });
     CFG.densities.forEach(function (d) { cmds.push({ id: "density-" + d.id, group: "Settings", label: "Density: " + d.label + (display.density === d.id ? " (in use)" : ""), disabled: display.density === d.id, run: function () { chooseDensity(d.id); } }); });
     CFG.textSizes.forEach(function (t) { cmds.push({ id: "text-" + t.id, group: "Settings", label: "Text size: " + t.label + (display.text === t.id ? " (in use)" : ""), disabled: display.text === t.id, run: function () { chooseText(t.id); } }); });
+    cmds.push({ id: "game-launch", group: "Game", label: state.game && state.game.running ? "Start MTGA (already running)" : "Start MTGA",
+      disabled: READ_ONLY || !state.game || state.game.running || !state.game.canLaunch, run: launchGame });
     cmds.push({ id: "status-refresh", group: "Status", label: "Refresh ingestion status", disabled: READ_ONLY, run: refreshStatus });
     [1, 2, 3, 4].forEach(function (n) {
       cmds.push({ id: "cards-min-" + n, group: "Cards", label: "Show cards held at " + n + "+ copies", disabled: READ_ONLY || state.cardsMin === n, run: function () { go("cards"); setCardsMin(n); } });

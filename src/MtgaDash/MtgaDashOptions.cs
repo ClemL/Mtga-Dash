@@ -28,6 +28,15 @@ public sealed class MtgaDashOptions
     /// </summary>
     public string ExceptionsPath { get; set; } = "";
 
+    /// <summary>Start MTGA when the dashboard starts, unless it is already running.</summary>
+    public bool LaunchGame { get; set; }
+
+    /// <summary>
+    /// The game to start: MTGA.exe for the standalone install, or a launcher URI such as
+    /// <c>steam://rungameid/2141910</c> for Steam.
+    /// </summary>
+    public string GamePath { get; set; } = @"C:\Program Files\Wizards of the Coast\MTGA\MTGA.exe";
+
     /// <summary>Expands environment variables and makes the path absolute. Empty stays empty.</summary>
     public static string Resolve(string path)
     {

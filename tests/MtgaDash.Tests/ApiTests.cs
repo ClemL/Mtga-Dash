@@ -164,6 +164,19 @@ public sealed class ApiTests
     }
 
     [TestMethod]
+    public async Task Starting_the_game_needs_the_header_and_reports_why_it_did_not()
+    {
+        Assert.AreEqual(HttpStatusCode.Forbidden, (await _http.PostAsync("/api/game/launch", null)).StatusCode);
+        // The default GamePath does not exist here, so nothing is launched; the reason comes back instead.
+        var r = await _http.SendAsync(Write(HttpMethod.Post, "/api/game/launch"));
+        var body = await r.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.IsFalse(body.GetProperty("started").GetBoolean());
+        StringAssert.Contains(body.GetProperty("message").GetString(), "not found");
+        var status = await _http.GetFromJsonAsync<JsonElement>("/api/game");
+        Assert.IsFalse(status.GetProperty("canLaunch").GetBoolean());
+    }
+
+    [TestMethod]
     public async Task The_page_is_served_with_the_boot_script_and_config()
     {
         var html = await _http.GetStringAsync("/");

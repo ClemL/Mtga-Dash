@@ -67,6 +67,8 @@ Any setting can be overridden on the command line, e.g. `--MtgaDash:Port=5090`.
 | `AllowLan` | `false` | Listen on `0.0.0.0` instead of `localhost`. |
 | `Port` | `5080` | HTTP port. |
 | `CardDbPath` | *(empty)* | MTGA's card database for card names; see below. |
+| `LaunchGame` | `false` | Start MTGA when the dashboard starts, unless it is already running; see below. |
+| `GamePath` | `C:\Program Files\Wizards of the Coast\MTGA\MTGA.exe` | The game to start, or a launcher URI such as `steam://rungameid/2141910`. |
 | `ExceptionsPath` | *(empty)* | Where Review-tab mappings are saved; empty means `account-exceptions.json` beside the database. |
 
 ### How ingestion works
@@ -132,6 +134,23 @@ Register a Task Scheduler task that starts it hidden at logon (from an elevated 
 The task runs as you with logon type S4U, so no window appears, restarts the app up to three times on
 failure and never times out. `-Unregister` removes it. The app also supports running as a Windows service
 (`sc.exe create MtgaDash binPath= "C:\dev\mtga\app\MtgaDash.exe"`), but the logon task is the tested path.
+
+## Start MTGA with the dashboard
+
+Set `"LaunchGame": true` (in `appsettings.Production.json` beside the published exe) and, if MTGA is not in
+the default folder, `GamePath`. Each time the dashboard starts it starts MTGA too, unless MTGA is already
+running: it never opens a second copy. The Status tab shows whether MTGA is running and has a
+**Start MTGA** button (also `Ctrl+K` → "Start MTGA"), which works even with `LaunchGame` off.
+
+The hidden logon task has no desktop, so a game it started would be invisible; the dashboard refuses and
+says so on the Status tab. To start the game at logon, register the task with `-Interactive`, which runs it
+in your desktop session with the dashboard's console window hidden:
+
+```powershell
+.\tools\Register-MtgaDashTask.ps1 -ExePath "C:\dev\mtga\app\MtgaDash.exe" -TaskName "MtgaDash" -Port 5080 -Interactive
+```
+
+An interactive task runs only while you are logged on, which is when you play anyway.
 
 ## LAN access
 

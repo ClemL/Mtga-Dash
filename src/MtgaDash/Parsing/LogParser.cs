@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace MtgaDash.Parsing;
 
@@ -26,8 +27,19 @@ public sealed class LogParserState
 /// unit test. Feed it complete lines in order; malformed JSON becomes a <see cref="ParseWarning"/>, never an
 /// exception.
 /// </summary>
-public sealed class LogParser
+public sealed partial class LogParser
 {
+    /// <summary>An Arena handle: a name, '#', and digits.</summary>
+    [GeneratedRegex(@"(?<name>[^\s""#:,{}\[\]]{1,40}#\d{3,6})(?![\d])")]
+    private static partial Regex Handle();
+
+    /// <summary>
+    /// Login lines other than the one MTGA writes for a manual login, e.g. after an automatic login with saved
+    /// credentials: "Display Name: X#1" or "logged in" next to a handle anywhere on a plain line.
+    /// </summary>
+    [GeneratedRegex(@"Display Name:\s*(?<name>[^\s""#:,{}]{1,40}#\d{3,6})|logged in[^{}]{0,80}?\b(?<name>[^\s""#:,{}\[\]]{1,40}#\d{3,6})", RegexOptions.IgnoreCase)]
+    private static partial Regex OtherLogin();
+
     private const string StartupPrefix = "Startup Timestamp:";
     private const string LoginMarker = "[Accounts - Login] Logged in successfully. Display Name:";
     private const string RequestMarker = "==> ";
@@ -97,12 +109,16 @@ public sealed class LogParser
         if (login >= 0)
         {
             var name = trimmed[(login + LoginMarker.Length)..].Trim();
-            if (name.Length > 0)
-            {
-                State.DisplayName = name;
-                State.SessionTimeUtc = null;
-                events.Add(new LoggedIn(name, State.BlockStartedUtc, State.ClientVersion));
-            }
+            if (name.Length > 0) SetLogin(name, "login line", events);
+            return events;
+        }
+
+        // Plain lines only: a JSON body or a request/response line can name other players.
+        if (!trimmed.StartsWith('{') && !trimmed.Contains("==>", StringComparison.Ordinal) && !trimmed.Contains("<==", StringComparison.Ordinal)
+            && OtherLogin().Match(trimmed) is { Success: true } other)
+        {
+            var name = other.Groups["name"].Value;
+            if (!string.Equals(name, State.DisplayName, StringComparison.Ordinal)) SetLogin(name, "other login line", events);
             return events;
         }
 
@@ -162,10 +178,50 @@ public sealed class LogParser
         return end > 0 && trimmed.AsSpan(end + 1).StartsWith(ResponseMarker) ? end + 1 : -1;
     }
 
+    private void SetLogin(string name, string source, List<LogEvent> events)
+    {
+        State.DisplayName = name;
+        State.SessionTimeUtc = null;
+        events.Add(new LoggedIn(name, State.BlockStartedUtc, State.ClientVersion) { Source = source });
+    }
+
+    /// <summary>
+    /// With no login seen yet, the server's own login or session response may still name the player. Only
+    /// then, and only from a response whose name says login, session or StartHook: match messages also carry
+    /// handles, the opponent's among them.
+    /// </summary>
+    private void TryLoginFromResponse(string method, string body, List<LogEvent> events)
+    {
+        if (State.DisplayName is not null) return;
+        if (!(method.Contains("Auth", StringComparison.OrdinalIgnoreCase) || method.Contains("Login", StringComparison.OrdinalIgnoreCase)
+              || method.Contains("Session", StringComparison.OrdinalIgnoreCase) || method == "StartHook")) return;
+        if (!body.Contains("screenName", StringComparison.OrdinalIgnoreCase) && !body.Contains("displayName", StringComparison.OrdinalIgnoreCase)) return;
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            using var unwrapped = Json.Unwrap(doc.RootElement);
+            foreach (var key in new[] { "screenName", "displayName" })
+            {
+                if (Json.Find(unwrapped.Element, key, maxDepth: 3) is { ValueKind: JsonValueKind.String } v
+                    && v.GetString() is { } candidate && Handle().Match(candidate) is { Success: true } m && m.Value == candidate.Trim())
+                {
+                    SetLogin(candidate.Trim(), $"{method} response", events);
+                    return;
+                }
+            }
+        }
+        catch (JsonException)
+        {
+            // The main handler reports malformed JSON; nothing to add here.
+        }
+    }
+
     private void HandleResponse(string method, string body, List<LogEvent> events)
     {
+        TryLoginFromResponse(method, body, events);
         var interesting = ResponsesOfInterest.Contains(method)
-            || body.Contains("InventoryInfo", StringComparison.OrdinalIgnoreCase);
+            || body.Contains("InventoryInfo", StringComparison.OrdinalIgnoreCase)
+            || body.Contains("Delta", StringComparison.OrdinalIgnoreCase);
         if (!interesting) return;
 
         // Responses before any login in a block belong to no account.
@@ -207,6 +263,9 @@ public sealed class LogParser
 
             if (Json.Find(root, "InventoryInfo", maxDepth: 3) is { ValueKind: JsonValueKind.Object } inv)
                 events.Add(ReadInventory(name, when, inv));
+            // A full inventory in the same message already includes any change it reports.
+            else if (ReadDelta(name, when, method, root) is { IsEmpty: false } delta)
+                events.Add(delta);
 
             var summaries = method switch
             {
@@ -271,6 +330,40 @@ public sealed class LogParser
         {
             events.Add(new ParseWarning(State.LineNumber, $"DeckUpsertDeckV3: malformed JSON ({ex.Message})"));
         }
+    }
+
+    /// <summary>Adds up every currency and wildcard "…Delta" number anywhere in the message.</summary>
+    private static InventoryDelta ReadDelta(string name, DateTime at, string method, JsonElement root)
+    {
+        int gems = 0, gold = 0, c = 0, u = 0, r = 0, m = 0;
+        void Walk(JsonElement el, int depth)
+        {
+            if (depth > 8) return;
+            if (el.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in el.EnumerateArray()) Walk(item, depth + 1);
+                return;
+            }
+            if (el.ValueKind != JsonValueKind.Object) return;
+            foreach (var p in el.EnumerateObject())
+            {
+                if (p.Value.ValueKind == JsonValueKind.Number && p.Value.TryGetInt32(out var n))
+                {
+                    switch (p.Name.ToLowerInvariant())
+                    {
+                        case "gemsdelta": gems += n; break;
+                        case "golddelta": gold += n; break;
+                        case "wccommondelta": c += n; break;
+                        case "wcuncommondelta": u += n; break;
+                        case "wcraredelta": r += n; break;
+                        case "wcmythicdelta": m += n; break;
+                    }
+                }
+                else Walk(p.Value, depth + 1);
+            }
+        }
+        Walk(root, 0);
+        return new InventoryDelta(name, at, method, gems, gold, c, u, r, m);
     }
 
     private static InventorySnapshot ReadInventory(string name, DateTime at, JsonElement inv)

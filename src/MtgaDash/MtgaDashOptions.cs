@@ -8,6 +8,12 @@ public sealed class MtgaDashOptions
     public string LogFolder { get; set; } = @"C:\dev\mtga\logs";
     public string LiveLogPath { get; set; } = @"%USERPROFILE%\AppData\LocalLow\Wizards Of The Coast\MTGA\Player.log";
     public bool WatchLiveLog { get; set; } = true;
+
+    /// <summary>Also read Player-prev.log beside the live log: the previous game session, kept until the next start.</summary>
+    public bool WatchPrevLog { get; set; } = true;
+
+    /// <summary>Which files in LogFolder are logs. The archiver's own <c>archiver_*.log</c> files are not.</summary>
+    public string LogFilePattern { get; set; } = "Player*.log";
     public int PollSeconds { get; set; } = 5;
     public string DatabasePath { get; set; } = @"C:\dev\mtga\data\mtga.db";
     public string AccountsCsvPath { get; set; } = @"C:\dev\mtga\data\mtga_accounts_20261112.csv";

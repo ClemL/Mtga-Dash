@@ -69,10 +69,17 @@ public sealed class IngestionService(
         if (folder.Length > 0)
         {
             Directory.CreateDirectory(folder);
-            foreach (var f in Directory.EnumerateFiles(folder, "*.log").Order(StringComparer.OrdinalIgnoreCase)) yield return f;
+            var pattern = string.IsNullOrWhiteSpace(options.LogFilePattern) ? "*.log" : options.LogFilePattern.Trim();
+            foreach (var f in Directory.EnumerateFiles(folder, pattern).Order(StringComparer.OrdinalIgnoreCase)) yield return f;
         }
-        if (options.WatchLiveLog && MtgaDashOptions.Resolve(options.LiveLogPath) is { Length: > 0 } live && File.Exists(live))
-            yield return live;
+        if (options.WatchLiveLog && MtgaDashOptions.Resolve(options.LiveLogPath) is { Length: > 0 } live)
+        {
+            // MTGA renames Player.log to Player-prev.log each time it starts, so a session played while the
+            // dashboard was off is still here until the next game start overwrites it.
+            if (options.WatchPrevLog && Path.Combine(Path.GetDirectoryName(live) ?? "", "Player-prev.log") is var prev && File.Exists(prev))
+                yield return prev;
+            if (File.Exists(live)) yield return live;
+        }
     }
 
     /// <summary>Re-runs matching after an exception mapping changed, and tells open pages.</summary>

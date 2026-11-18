@@ -12,21 +12,32 @@ public sealed class ActivityLogTests
         """{"Changes":[{"Source":"EventPrize","GoldDelta":250,"GemsDelta":0}]}""",
     ];
 
+    /// <summary>Mentions wildcards but carries no inventory the parser reads.</summary>
+    private static readonly string[] Unread =
+    [
+        "<== EventGetCoursesV2(22222222-0000-4000-8000-000000000006)",
+        """{"Courses":[{"CourseId":"x","WildCardRedemptions":1}]}""",
+    ];
+
     private static List<LogEvent> Parse(IEnumerable<string> lines) => new LogParser(logTimeZone: Fixtures.Utc).ParseAll(lines).ToList();
 
     [TestMethod]
     public void Every_message_is_reported_with_whether_it_was_read_and_what_it_mentions()
     {
-        var seen = Parse([.. Fixtures.AllerclearLog(), .. AfterMatch]).OfType<MessageSeen>().ToList();
+        var seen = Parse([.. Fixtures.AllerclearLog(), .. AfterMatch, .. Unread]).OfType<MessageSeen>().ToList();
 
         var startHook = seen.Single(m => m.Method == "StartHook");
         Assert.IsTrue(startHook.Handled);
         CollectionAssert.Contains(startHook.Hints.ToList(), "InventoryInfo");
 
         var prize = seen.Single(m => m.Method == "EventClaimPrize");
-        Assert.IsFalse(prize.Handled, "per-match changes are not read yet");
+        Assert.IsTrue(prize.Handled, "per-match gold changes are read");
         CollectionAssert.AreEquivalent(new[] { "GoldDelta", "GemsDelta" }, prize.Hints.ToList());
-        Assert.AreEqual("Allerclear#92603", prize.DisplayName);
+
+        var unread = seen.Single(m => m.Method == "EventGetCoursesV2");
+        Assert.IsFalse(unread.Handled);
+        CollectionAssert.AreEqual(new[] { "WildCard" }, unread.Hints.ToList());
+        Assert.AreEqual("Allerclear#92603", unread.DisplayName);
 
         var upsert = seen.Single(m => m.Method == "DeckUpsertDeckV3");
         Assert.AreEqual(("request", true), (upsert.Direction, upsert.Handled));
@@ -36,20 +47,21 @@ public sealed class ActivityLogTests
     public void A_message_that_mentions_inventory_but_is_not_read_gets_its_own_row()
     {
         var log = new ActivityLog();
-        foreach (var e in Parse([.. Fixtures.AllerclearLog(), .. AfterMatch])) log.Record(Path.Combine("logs", "Player.log"), e);
+        foreach (var e in Parse([.. Fixtures.AllerclearLog(), .. AfterMatch, .. Unread])) log.Record(Path.Combine("logs", "Player.log"), e);
 
         var entries = log.Entries();
         var notRead = entries.First();
         Assert.AreEqual("not read", notRead.Kind, "newest first");
-        StringAssert.Contains(notRead.Summary, "EventClaimPrize");
+        StringAssert.Contains(notRead.Summary, "EventGetCoursesV2");
         Assert.AreEqual("Player.log", notRead.File);
 
         var kinds = entries.Select(e => e.Kind).ToList();
         CollectionAssert.IsSubsetOf(new[] { "client start", "login", "inventory", "decks", "rank", "deck saved" }, kinds);
         StringAssert.Contains(entries.Single(e => e.Kind == "inventory").Summary, "gems 450, gold 2,150, wildcards 39/25/8/7, 2 boosters");
 
+        StringAssert.Contains(entries.Single(e => e.Kind == "inventory change").Summary, "+250 gold (EventClaimPrize)");
         var prize = log.Messages().Single(m => m.Method == "EventClaimPrize");
-        Assert.AreEqual((1L, 0L), (prize.Count, prize.Handled));
+        Assert.AreEqual((1L, 1L), (prize.Count, prize.Handled));
     }
 
     [TestMethod]

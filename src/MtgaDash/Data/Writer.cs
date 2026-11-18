@@ -33,6 +33,25 @@ public static class Writer
                     UpsertSnapshot(c, tx, s, sourceFile);
                     snapshots++;
                     break;
+                case InventoryDelta delta:
+                    // Only onto a snapshot this session already has, and only from a later line than the one that
+                    // last set it: re-reading the same log, or its archived copy, can never apply a change twice.
+                    snapshots += c.Execute("""
+                        UPDATE Snapshots SET
+                            Gems = CASE WHEN Gems IS NULL THEN NULL ELSE Gems + @Gems END,
+                            Gold = CASE WHEN Gold IS NULL THEN NULL ELSE Gold + @Gold END,
+                            WcCommon = CASE WHEN WcCommon IS NULL THEN NULL ELSE WcCommon + @WcCommon END,
+                            WcUncommon = CASE WHEN WcUncommon IS NULL THEN NULL ELSE WcUncommon + @WcUncommon END,
+                            WcRare = CASE WHEN WcRare IS NULL THEN NULL ELSE WcRare + @WcRare END,
+                            WcMythic = CASE WHEN WcMythic IS NULL THEN NULL ELSE WcMythic + @WcMythic END,
+                            SourceLine = @Line, SourceFile = @SourceFile
+                        WHERE DisplayName = @DisplayName AND CapturedAtUtc = @At AND SourceLine < @Line
+                        """, new
+                    {
+                        delta.Gems, delta.Gold, delta.WcCommon, delta.WcUncommon, delta.WcRare, delta.WcMythic,
+                        delta.Line, SourceFile = sourceFile, delta.DisplayName, At = Time.Format(delta.CapturedAtUtc),
+                    }, tx);
+                    break;
                 case DeckSummaries d:
                     newPlayers += TouchPlayer(c, tx, d.DisplayName, d.SeenAtUtc);
                     foreach (var deck in d.Decks) UpsertDeck(c, tx, d.DisplayName, deck, d.SeenAtUtc, null);

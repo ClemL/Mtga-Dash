@@ -56,10 +56,14 @@ public sealed class ActivityLog
                     Add(file, e.Line, s.StartedAtUtc, "client start", null, "MTGA started a new session in this log");
                     break;
                 case LoggedIn l:
-                    Add(file, e.Line, l.AtUtc, "login", l.DisplayName, l.ClientVersion is null ? "Logged in" : $"Logged in, client {l.ClientVersion}");
+                    Add(file, e.Line, l.AtUtc, "login", l.DisplayName,
+                        (l.ClientVersion is null ? "Logged in" : $"Logged in, client {l.ClientVersion}") + (l.Source == "login line" ? "" : $" (from {l.Source})"));
                     break;
                 case InventorySnapshot i:
                     Add(file, e.Line, i.CapturedAtUtc, "inventory", i.DisplayName, Describe(i));
+                    break;
+                case InventoryDelta delta:
+                    Add(file, e.Line, delta.CapturedAtUtc, "inventory change", delta.DisplayName, DescribeDelta(delta));
                     break;
                 case DeckSummaries d:
                     Add(file, e.Line, d.SeenAtUtc, "decks", d.DisplayName, $"{d.Decks.Count} decks, {d.Decks.Count(x => !x.IsPrecon)} custom");
@@ -91,6 +95,19 @@ public sealed class ActivityLog
         var text = parts.Count > 0 ? string.Join(", ", parts) : "no inventory fields";
         // A partial update changes only what it lists; the rest keeps the session's earlier values.
         return i.Boosters is null ? text + " (partial update)" : text;
+    }
+
+    internal static string DescribeDelta(InventoryDelta d)
+    {
+        var parts = new List<string>();
+        void Part(int v, string what) { if (v != 0) parts.Add($"{(v > 0 ? "+" : "")}{v.ToString("N0", CultureInfo.InvariantCulture)} {what}"); }
+        Part(d.Gems, "gems");
+        Part(d.Gold, "gold");
+        Part(d.WcCommon, "common wildcards");
+        Part(d.WcUncommon, "uncommon wildcards");
+        Part(d.WcRare, "rare wildcards");
+        Part(d.WcMythic, "mythic wildcards");
+        return $"{string.Join(", ", parts)} ({d.Method})";
     }
 
     private void Count(MessageSeen m, string file)

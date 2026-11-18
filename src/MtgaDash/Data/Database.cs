@@ -144,6 +144,20 @@ public sealed class Database
         LEFT JOIN Ranks r ON r.DisplayName = a.DisplayName AND r.CapturedAtUtc = (
             SELECT MAX(r2.CapturedAtUtc) FROM Ranks r2 WHERE r2.DisplayName = a.DisplayName);
         """,
+        // 2: the Activity tab's feed, kept for 24 hours so it survives a restart.
+        """
+        CREATE TABLE ActivityEntries(
+            Id INTEGER PRIMARY KEY,
+            AtUtc TEXT NOT NULL,
+            LogTimeUtc TEXT NULL,
+            File TEXT NOT NULL,
+            Line INTEGER NOT NULL,
+            Kind TEXT NOT NULL,
+            DisplayName TEXT NULL,
+            Summary TEXT NOT NULL,
+            UNIQUE(File, Line, Kind, Summary));
+        CREATE INDEX IX_ActivityEntries_At ON ActivityEntries(AtUtc);
+        """,
     ];
 }
 

@@ -13,18 +13,61 @@ public sealed record MessageCount(
 
 /// <summary>
 /// What ingestion found, as it happens: each login, inventory, deck and rank, and a count of every message
-/// MTGA wrote, read or not. Held in memory only (it restarts with the app), because it exists to answer
-/// "why did nothing change?" while you play, not to keep history.
+/// MTGA wrote, read or not. Entries are kept in the database for <see cref="Retention"/>, so a restart does not
+/// empty the tab; message counts are in memory and restart with the app.
 /// </summary>
 public sealed class ActivityLog
 {
     private const int MaxEntries = 500;
     private const int MaxMethods = 400;
+    public static readonly TimeSpan Retention = TimeSpan.FromHours(24);
 
     private readonly Lock _gate = new();
     private readonly LinkedList<ActivityEntry> _entries = new();
+    private readonly List<ActivityEntry> _unsaved = [];
     private readonly Dictionary<(string, string), Counter> _messages = [];
+    private readonly Database? _db;
     private long _nextId = 1;
+
+    /// <param name="db">Where entries are kept; null keeps them in memory only (tests).</param>
+    public ActivityLog(Database? db = null)
+    {
+        _db = db;
+        if (db is null) return;
+        using var c = db.Open();
+        var cutoff = Time.Format(DateTime.UtcNow - Retention);
+        var saved = Dapper.SqlMapper.Query<ActivityEntry>(c, """
+            SELECT Id, AtUtc, LogTimeUtc, File, Line, Kind, DisplayName, Summary FROM ActivityEntries
+            WHERE AtUtc >= @cutoff ORDER BY Id DESC LIMIT @max
+            """, new { cutoff, max = MaxEntries }).ToList();
+        foreach (var e in saved) _entries.AddLast(e);
+        _nextId = saved.Count > 0 ? saved.Max(e => e.Id) + 1 : 1;
+    }
+
+    /// <summary>
+    /// Saves entries recorded since the last call and deletes those past retention. Called once per poll, so a
+    /// first pass over large archives writes in one transaction instead of one per event.
+    /// </summary>
+    public void Flush()
+    {
+        if (_db is null) return;
+        List<ActivityEntry> pending;
+        lock (_gate)
+        {
+            pending = [.. _unsaved];
+            _unsaved.Clear();
+        }
+        using var c = _db.Open();
+        using var tx = c.BeginTransaction();
+        // The same line read twice (the live log and its archived copy, or a re-parse) is stored once.
+        foreach (var e in pending)
+            Dapper.SqlMapper.Execute(c, """
+                INSERT OR IGNORE INTO ActivityEntries(AtUtc, LogTimeUtc, File, Line, Kind, DisplayName, Summary)
+                VALUES (@AtUtc, @LogTimeUtc, @File, @Line, @Kind, @DisplayName, @Summary)
+                """, e, tx);
+        Dapper.SqlMapper.Execute(c, "DELETE FROM ActivityEntries WHERE AtUtc < @cutoff", new { cutoff = Time.Format(DateTime.UtcNow - Retention) }, tx);
+        tx.Commit();
+    }
 
     private sealed class Counter
     {
@@ -129,8 +172,10 @@ public sealed class ActivityLog
 
     private void Add(string file, long line, DateTime? logTime, string kind, string? name, string summary)
     {
-        _entries.AddFirst(new ActivityEntry(_nextId++, Time.Format(DateTime.UtcNow), Time.Format(logTime), file, line, kind, name, summary));
+        var entry = new ActivityEntry(_nextId++, Time.Format(DateTime.UtcNow), Time.Format(logTime), file, line, kind, name, summary);
+        _entries.AddFirst(entry);
         while (_entries.Count > MaxEntries) _entries.RemoveLast();
+        if (_db is not null) _unsaved.Add(entry);
     }
 
     /// <summary>Newest first.</summary>

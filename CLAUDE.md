@@ -52,12 +52,15 @@ src/MtgaDash/
   wwwroot/      index.html (the whole UI), updates.txt (changelog)
 tests/MtgaDash.Tests/   MSTest; Fixtures.cs builds synthetic logs
 tools/Register-MtgaDashTask.ps1   logon task for the published exe
+tools/Update-MtgaDash.ps1         stop, pull, publish, start
 ```
 
 ## Conventions that matter here
 
 * **The parser is pure.** `LogParser` takes lines and returns events; no I/O, no clock, the time zone is
   injected. Log-format changes belong there, with a test in `LogParserTests`.
+* **Inventory changes (`InventoryDelta`) apply once.** They update the session's snapshot only from a later line
+  than the one that last set it (`SourceLine`), like every other update; never add a delta without that guard.
 * **The parser reports every message, read or not** (`MessageSeen`), so the Activity tab shows what MTGA
   writes. When you add support for a message, check its Activity row turns from "not read" to read.
 * **Owned counts are a minimum, from saved decks.** `KnownCollection` takes the most copies in any one deck
@@ -104,7 +107,10 @@ without it a lagging archive copy ingested after the live log rolled the invento
 injected zone; tests pin UTC so they pass on any machine.
 
 **Dapper maps records by constructor, with exact types.** SQLite integers are `Int64`: a `bool` or `int`
-parameter in a query record throws at runtime (`DeckRow.IsPrecon` is `long` for this reason).
+parameter in a query record throws at runtime (`DeckRow.IsPrecon` is `long` for this reason). Worse, a
+computed column (COUNT, SUM, EXISTS, a window function) has no type at all when the result is empty, so a
+positional record over one throws on an empty database: use settable properties there (`AccountLatest`,
+`PlayerRow`, `SetTotal`). `EmptyDatabaseTests` runs every query on an empty database; add new ones to it.
 
 **`request` in a client request line is JSON inside a JSON string, sometimes encoded twice.** Use
 `Json.Unwrap`, which re-parses until the value is no longer a string.

@@ -34,8 +34,23 @@ public sealed class MtgaDashOptions
     /// </summary>
     public string ExceptionsPath { get; set; } = "";
 
+    /// <summary>Review-tab alert: gems fell by at least this much between two snapshots of one account.</summary>
+    public int AlertGemsDrop { get; set; } = 1000;
+
+    /// <summary>Review-tab alert: gold fell by at least this much.</summary>
+    public int AlertGoldDrop { get; set; } = 5000;
+
+    /// <summary>Review-tab alert: rare and mythic wildcards together fell by at least this many.</summary>
+    public int AlertWildcardDrop { get; set; } = 2;
+
+    /// <summary>How far back the Review tab looks for drops.</summary>
+    public int AlertDays { get; set; } = 30;
+
     /// <summary>Open the dashboard in the default browser once it is listening (only where there is a desktop).</summary>
     public bool OpenBrowser { get; set; } = true;
+
+    /// <summary>Do not open the browser again within this many minutes, so a crash restart adds no tab.</summary>
+    public int BrowserReopenMinutes { get; set; } = 30;
 
     /// <summary>The page opened at startup and written to the console; the Activity tab by default.</summary>
     public string StartPage { get; set; } = "/#/activity";

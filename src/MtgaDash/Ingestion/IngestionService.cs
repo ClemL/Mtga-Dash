@@ -11,7 +11,8 @@ public sealed class IngestionService(
     ChangeNotifier notifier,
     ExceptionStore exceptions,
     StatusTracker status,
-    ILogger<IngestionService> logger) : BackgroundService
+    ILogger<IngestionService> logger,
+    ActivityLog? activity = null) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -121,6 +122,7 @@ public sealed class IngestionService(
             LogMatching(Writer.RunMatching(c, exceptions));
         }
         status.Polled(polled, System.Diagnostics.Stopwatch.GetElapsedTime(started));
+        activity?.Flush();
         if (changed) notifier.Notify();
     }
 }

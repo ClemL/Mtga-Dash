@@ -44,7 +44,7 @@ public static class AppHost
         builder.Services.AddSingleton<StatusTracker>();
         builder.Services.AddSingleton<ActivityLog>();
         builder.Services.AddSingleton(sp => new CardNames(options.CardDbPath, sp.GetRequiredService<ILogger<CardNames>>()));
-        builder.Services.AddSingleton(sp => new Queries(db, sp.GetRequiredService<CardNames>(), sp.GetRequiredService<ExceptionStore>()));
+        builder.Services.AddSingleton(sp => new Queries(db, sp.GetRequiredService<CardNames>(), sp.GetRequiredService<ExceptionStore>(), options));
         builder.Services.AddSingleton(sp => new LogIngestor(db, sp.GetRequiredService<ILogger<LogIngestor>>(),
             onWarning: sp.GetRequiredService<StatusTracker>().Warning, onEvent: sp.GetRequiredService<ActivityLog>().Record));
         builder.Services.AddSingleton<PageRenderer>();

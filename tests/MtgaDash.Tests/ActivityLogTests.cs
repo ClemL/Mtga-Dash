@@ -84,3 +84,33 @@ public sealed class ActivityLogTests
         Assert.AreEqual(101, ActivityLog.Tail(path, 500).Count);
     }
 }
+
+[TestClass]
+public sealed class ActivityHistoryTests
+{
+    [TestMethod]
+    public void Entries_survive_a_restart_once_and_expire_after_a_day()
+    {
+        using var t = new TempDb();
+        var events = new LogParser(logTimeZone: Fixtures.Utc).ParseAll(Fixtures.AllerclearLog()).ToList();
+        var first = new ActivityLog(t.Db);
+        foreach (var e in events) first.Record("Player.log", e);
+        first.Flush();
+        var count = first.Entries().Count;
+        Assert.IsTrue(count >= 6);
+
+        var restarted = new ActivityLog(t.Db);
+        CollectionAssert.AreEqual(first.Entries().Select(e => e.Summary).ToList(), restarted.Entries().Select(e => e.Summary).ToList());
+
+        // The same lines again (archived copy, re-parse) are stored once.
+        foreach (var e in events) restarted.Record("Player.log", e);
+        restarted.Flush();
+        using (var c = t.Db.Open())
+        {
+            Assert.AreEqual(count, Dapper.SqlMapper.ExecuteScalar<int>(c, "SELECT COUNT(*) FROM ActivityEntries"));
+            Dapper.SqlMapper.Execute(c, "UPDATE ActivityEntries SET AtUtc = '2000-01-01T00:00:00.000Z'");
+        }
+        restarted.Flush();
+        Assert.AreEqual(0, new ActivityLog(t.Db).Entries().Count, "older than 24 hours is deleted");
+    }
+}

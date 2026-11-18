@@ -16,3 +16,11 @@
 2026-11-18T05:17:00Z - New Cards tab lists the rares and mythics each account is known to own at 3 or more copies, counted from every deck it ever saved, with a matching column on the Accounts table and a Known cards table on each account
 2026-11-18T05:20:00Z - MTGA can start with the dashboard (setting LaunchGame) or from Start MTGA on the Status tab, never as a second copy
 2026-11-18T05:36:00Z - On startup the dashboard writes its address to the console and opens the Activity tab in your browser
+2026-11-18T05:54:00Z - Logins written in other ways are recognized, and the Status tab warns when MTGA is played with no login recognized
+2026-11-18T05:54:00Z - Gold, gems and wildcards won after a match now update the account during play, not only at the next login
+2026-11-18T05:54:00Z - The previous game session (Player-prev.log) is read too, and the archiver's own log files are skipped
+2026-11-18T05:54:00Z - The Cards tab and each account list the custom decks not recorded yet, so you know which to open and save
+2026-11-18T05:54:00Z - Login queue on the Stale tab: copy the next account to log in with one click or the N key
+2026-11-18T05:54:00Z - The Review tab lists large inventory drops between snapshots
+2026-11-18T05:54:00Z - The Activity tab keeps the last 24 hours across restarts, and a restart after a crash no longer opens another browser tab
+2026-11-18T05:54:00Z - Fixed the Review and Totals tabs failing on a new, empty database

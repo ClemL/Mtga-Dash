@@ -15,10 +15,12 @@ public sealed class StartPageTests
     public void The_address_is_one_a_person_can_open(string listening, string page, string expected) =>
         Assert.AreEqual(expected, StartPage.Url([listening], page));
 
-    private static (StartPage Page, List<string> Opened) Make(bool openBrowser = true, bool desktop = true)
+    private static (StartPage Page, List<string> Opened) Make(bool openBrowser = true, bool desktop = true, string? folder = null)
     {
         var opened = new List<string>();
-        var page = new StartPage(new MtgaDashOptions { OpenBrowser = openBrowser }, NullLogger<StartPage>.Instance)
+        folder ??= Path.Combine(Path.GetTempPath(), "mtgadash-startpage", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(folder);
+        var page = new StartPage(new MtgaDashOptions { OpenBrowser = openBrowser, DatabasePath = Path.Combine(folder, "mtga.db") }, NullLogger<StartPage>.Instance)
         {
             Open = url => { opened.Add(url); return true; },
             HasDesktop = () => desktop,
@@ -55,5 +57,26 @@ public sealed class StartPageTests
         var (off, openedOff) = Make(openBrowser: false);
         Assert.AreEqual("http://localhost:5080/#/activity", off.Announce(["http://localhost:5080"]), "the address is still written out");
         Assert.AreEqual(0, openedOff.Count);
+    }
+
+    [TestMethod]
+    public void A_restart_soon_after_does_not_open_another_tab()
+    {
+        using var t = new TempDb();
+        var now = new DateTime(2026, 11, 18, 9, 0, 0, DateTimeKind.Utc);
+        var (first, opened) = Make(folder: t.Folder);
+        first.UtcNow = () => now;
+        first.Announce(["http://localhost:5080"]);
+        Assert.AreEqual(1, opened.Count);
+
+        var (crashRestart, openedAgain) = Make(folder: t.Folder);
+        crashRestart.UtcNow = () => now.AddMinutes(1);
+        crashRestart.Announce(["http://localhost:5080"]);
+        Assert.AreEqual(0, openedAgain.Count);
+
+        var (nextDay, openedNextDay) = Make(folder: t.Folder);
+        nextDay.UtcNow = () => now.AddDays(1);
+        nextDay.Announce(["http://localhost:5080"]);
+        Assert.AreEqual(1, openedNextDay.Count);
     }
 }

@@ -59,6 +59,8 @@ Any setting can be overridden on the command line, e.g. `--MtgaDash:Port=5090`.
 | `LogFolder` | `C:\dev\mtga\logs` | Every `*.log` here is ingested. The archiver writes `Player_yyyyMMdd_HHmmss.log`. |
 | `LiveLogPath` | `%USERPROFILE%\AppData\LocalLow\Wizards Of The Coast\MTGA\Player.log` | MTGA's own log. |
 | `WatchLiveLog` | `true` | Also ingest the live log. |
+| `WatchPrevLog` | `true` | Also ingest `Player-prev.log` beside it: the previous session, which MTGA keeps until its next start. |
+| `LogFilePattern` | `Player*.log` | Which files in `LogFolder` are logs; the archiver's own `archiver_*.log` files are skipped. |
 | `PollSeconds` | `5` | How often files are checked for growth. |
 | `DatabasePath` | `C:\dev\mtga\data\mtga.db` | SQLite database (WAL mode). |
 | `AccountsCsvPath` | `C:\dev\mtga\data\mtga_accounts_20261112.csv` | Columns `Status, Email, Notes, Misc Notes, Note Source`. |
@@ -67,6 +69,9 @@ Any setting can be overridden on the command line, e.g. `--MtgaDash:Port=5090`.
 | `AllowLan` | `false` | Listen on `0.0.0.0` instead of `localhost`. |
 | `Port` | `5080` | HTTP port. |
 | `CardDbPath` | *(empty)* | MTGA's card database for card names; see below. |
+| `AlertGemsDrop` / `AlertGoldDrop` / `AlertWildcardDrop` | `1000` / `5000` / `2` | How large a fall between two snapshots is listed under Inventory drops on the Review tab. |
+| `AlertDays` | `30` | How far back the Review tab looks for drops. |
+| `BrowserReopenMinutes` | `30` | No new browser tab within this many minutes of the last, so a crash restart opens none. |
 | `OpenBrowser` | `true` | Open the dashboard in your default browser once it is running (only where there is a desktop). |
 | `StartPage` | `/#/activity` | The page opened at startup and written to the console, e.g. `/#/accounts`. |
 | `LaunchGame` | `false` | Start MTGA when the dashboard starts, unless it is already running; see below. |
@@ -120,6 +125,17 @@ Set `CardDbPath` to MTGA's card database, for example
 `C:\Program Files\Wizards of the Coast\MTGA\MTGA_Data\Downloads\Raw\Raw_CardDatabase_*.mtga`. The wildcard
 picks the newest file. The schema is inspected at runtime for a card table (grpId and title id) and an
 English localization table; if it cannot be resolved, card ids are shown alone and the console says why.
+
+## Updating
+
+After a change is merged, one command stops the dashboard, pulls `main`, republishes and starts it again
+(settings in `appsettings.Production.json`, the database and mappings are kept):
+
+```powershell
+.\tools\Update-MtgaDash.ps1 -RepoPath "C:\dev\mtga\MtgaDash" -AppPath "C:\dev\mtga\app" -TaskName "MtgaDash" -Branch "main"
+```
+
+Add `-RunTests` to run the tests first; a failure leaves the running version in place.
 
 ## Publish and run at logon
 
@@ -206,6 +222,33 @@ Its tab shows a red count when something needs attention:
 - no poll for a while (ingestion stuck);
 - the live log missing at `LiveLogPath`.
 
+## Login queue (Stale tab)
+
+The top of the Stale tab is a work list for your login script: **Next** is the account that has gone longest
+without a login. **Copy and next** (or `N` anywhere, or `Ctrl+K` → "Copy the next account to log in") copies
+its email and moves on; **Skip** moves on without copying. An account leaves the queue on its own once its
+login is read. Handed-out emails are remembered for today on this device; **Reset today's queue** starts over.
+
+## Inventory drops (Review tab)
+
+Each account's snapshots are compared in time order. A fall of at least 1,000 gems, 5,000 gold or 2 rare and
+mythic wildcards together (settings `AlertGemsDrop`, `AlertGoldDrop`, `AlertWildcardDrop`) in the last 30
+days is listed with its dates: spending you did not plan, or someone else using the account.
+
+## Gold and gems during play
+
+At login MTGA logs a full inventory; after a match or reward it logs changes instead (`"goldDelta": 250`).
+Both are read: changes are added to that session's inventory, each exactly once however often the log is
+read, and the next login's full inventory corrects any drift.
+
+## Logins the parser recognizes
+
+The usual `Logged in successfully. Display Name: …` line; any other plain line with `Display Name:` or
+"logged in" next to a `name#1234` handle; and, when no login line was written, the player's handle in the
+server's login or session response (never from match messages, which name opponents). If MTGA is being
+played and none of these appear within 5 minutes of the client starting, the Status tab says so: that
+session's data is being skipped, and the line to support is in the log (Activity tab, Last lines of a log).
+
 ## Activity tab: "I played and nothing changed"
 
 The Activity tab (key `6`) shows what the app read, refreshed every 3 seconds while it is open:
@@ -216,11 +259,12 @@ The Activity tab (key `6`) shows what the app read, refreshed every 3 seconds wh
 - **Messages from MTGA**: every request and response the client logged, how often, and how many the app
   read. A **highlighted** row mentions inventory (gold, gems, wildcards, boosters) but is not read yet: the
   likely reason numbers did not move after a match.
-- **Recent activity**: the newest 50 logins, inventory updates, deck lists, ranks, warnings and
+- **Recent activity**: the newest 50 logins, inventory updates and changes, deck lists, ranks, warnings and
   **not read** messages, each with its file and line. **Show all** lists up to 500.
 - **Last lines of a log**: the end of any log file the app reads, long lines cut to 400 characters.
 
-The activity is kept in memory and starts empty when the app restarts. Nothing in it is written to disk.
+Recent activity is kept for 24 hours in the database, so a restart does not empty it; the message counts
+start over with the app.
 
 ## Cards tab: rares and mythics owned at 3+ copies
 
@@ -232,7 +276,8 @@ the deck. A saved deck is taken as proof of ownership, so:
 - every version of every deck counts, so cutting a card from a deck later does not lower the number;
 - cards never saved in a deck are missing: every number is a minimum.
 
-To record an account's cards, open each deck in MTGA's deck builder and press **Done**. The **Cards** tab
+To record an account's cards, open each deck in MTGA's deck builder and press **Done**. **Decks not recorded
+yet**, at the bottom of the Cards tab and on each account's page, lists the custom decks still to do. The **Cards** tab
 (key `7`) lists each card held at the chosen copies by any account, with who holds it; the filter matches
 card, set or account. The **R/M 3+** column on the Accounts table counts them per account, and each
 account's detail page has a **Known cards** table.

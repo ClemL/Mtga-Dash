@@ -40,7 +40,7 @@ src/MtgaDash/
   AppHost.cs    builds the app: DI, host filtering, every endpoint (Program.cs only calls it)
   Parsing/      LogParser (pure: lines in, typed events out), Json helpers
   Ingestion/    LogIngestor (offsets, rotation, batching), IngestionService (poll loop), ChangeNotifier (SSE),
-                StatusTracker (Status tab)
+                StatusTracker (Status tab), ActivityLog (Activity tab: in-memory feed and message counts)
   Data/         Database (schema + migrations), Writer (upserts, matching), Queries (read side)
   Accounts/     AccountMatcher (pure), AccountsCsv, AccountExceptions (compiled overrides),
                 ExceptionStore (Review-tab overrides in account-exceptions.json)
@@ -55,6 +55,8 @@ tools/Register-MtgaDashTask.ps1   logon task for the published exe
 
 * **The parser is pure.** `LogParser` takes lines and returns events; no I/O, no clock, the time zone is
   injected. Log-format changes belong there, with a test in `LogParserTests`.
+* **The parser reports every message, read or not** (`MessageSeen`), so the Activity tab shows what MTGA
+  writes. When you add support for a message, check its Activity row turns from "not read" to read.
 * **Every write is an idempotent upsert on a natural key.** Re-ingesting a file, or the live log and its
   archived copy, must change nothing. `IngestionTests.Dump` compares whole databases: use it for new tables.
 * **Matching is recomputed from scratch** (`Writer.RunMatching`) on startup, on import, when a new display

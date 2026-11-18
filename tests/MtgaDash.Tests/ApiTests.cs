@@ -141,6 +141,29 @@ public sealed class ApiTests
     }
 
     [TestMethod]
+    public async Task Activity_lists_every_display_name_seen_and_what_was_read()
+    {
+        var a = await _http.GetFromJsonAsync<JsonElement>("/api/activity");
+        var names = a.GetProperty("players").EnumerateArray().Select(p => p.GetProperty("displayName").GetString()).ToList();
+        CollectionAssert.AreEquivalent(new[] { "Corsair#5", "Stranger#7" }, names);
+        var corsair = a.GetProperty("players").EnumerateArray().Single(p => p.GetProperty("displayName").GetString() == "Corsair#5");
+        Assert.AreEqual(450, corsair.GetProperty("gems").GetInt32());
+        var kinds = a.GetProperty("entries").EnumerateArray().Select(e => e.GetProperty("kind").GetString()).ToList();
+        CollectionAssert.Contains(kinds, "inventory");
+        Assert.IsTrue(a.GetProperty("messages").EnumerateArray().Any(m => m.GetProperty("method").GetString() == "StartHook"));
+    }
+
+    [TestMethod]
+    public async Task Log_tail_reads_only_a_file_the_app_already_reads()
+    {
+        var tail = await _http.GetFromJsonAsync<JsonElement>("/api/logtail?file=Player_1.log&lines=2");
+        var lines = tail.GetProperty("lines").EnumerateArray().Select(l => l.GetString()).ToList();
+        CollectionAssert.AreEqual(new[] { "Startup Timestamp: 11/13/2026 2:00:00 AM", "[Accounts - Login] Logged in successfully. Display Name: Stranger#7" }, lines);
+        Assert.AreEqual(HttpStatusCode.NotFound, (await _http.GetAsync("/api/logtail?file=accounts.csv")).StatusCode);
+        Assert.AreEqual(HttpStatusCode.NotFound, (await _http.GetAsync("/api/logtail?file=..%2Faccounts.csv")).StatusCode);
+    }
+
+    [TestMethod]
     public async Task The_page_is_served_with_the_boot_script_and_config()
     {
         var html = await _http.GetStringAsync("/");

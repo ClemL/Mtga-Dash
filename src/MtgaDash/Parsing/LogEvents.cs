@@ -65,5 +65,17 @@ public sealed record RankInfo(
     string? LimitedClass,
     int? LimitedLevel) : LogEvent;
 
+/// <summary>
+/// Any request or response line, whether or not the parser read anything from it. Nothing is stored; the
+/// Activity tab counts these to show what MTGA writes, including messages the parser ignores.
+/// </summary>
+public sealed record MessageSeen(
+    string Direction,
+    string Method,
+    string? DisplayName,
+    bool Handled,
+    IReadOnlyList<string> Hints,
+    int Bytes) : LogEvent;
+
 /// <summary>A line the parser could not use. Ingestion logs it and carries on.</summary>
 public sealed record ParseWarning(long LineNumber, string Message) : LogEvent;

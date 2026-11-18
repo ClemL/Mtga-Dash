@@ -14,6 +14,7 @@ single-page dashboard on `http://localhost:5080` that updates live.
   accounts marked unused that still hold decks or rare wildcards.
 - **Status**: when the last poll ran, how far each log file has been read, recent parse warnings, and a
   warning when MTGA is running with Detailed Logs off.
+- **Activity**: what the app found in the logs as you play, for troubleshooting; see below.
 
 Everything runs offline: no npm, no CDN, no build step for the page.
 
@@ -171,6 +172,22 @@ Its tab shows a red count when something needs attention:
 - no poll for a while (ingestion stuck);
 - the live log missing at `LiveLogPath`.
 
+## Activity tab: "I played and nothing changed"
+
+The Activity tab (key `6`) shows what the app read, refreshed every 3 seconds while it is open:
+
+- **Display names seen**: every name found in a log, with its account or **unmatched**, last login, last
+  inventory, and latest gems, gold and rare/mythic wildcards. The Accounts tab lists only accounts from the
+  CSV, so an unmatched name's data shows here; map it on the Review tab.
+- **Messages from MTGA**: every request and response the client logged, how often, and how many the app
+  read. A **highlighted** row mentions inventory (gold, gems, wildcards, boosters) but is not read yet: the
+  likely reason numbers did not move after a match.
+- **Recent activity**: the newest 50 logins, inventory updates, deck lists, ranks, warnings and
+  **not read** messages, each with its file and line. **Show all** lists up to 500.
+- **Last lines of a log**: the end of any log file the app reads, long lines cut to 400 characters.
+
+The activity is kept in memory and starts empty when the app restarts. Nothing in it is written to disk.
+
 ## Static export (phone, PC off)
 
 With `ExportFolder` set, 30 s after data changes the app writes:
@@ -191,7 +208,7 @@ applies the text as the Accounts filter, which the search box in the header then
 |---|---|
 | `Ctrl+K`, `/` | Open the palette on the current filter |
 | `Ctrl+Shift+P` | Open the palette empty |
-| `1` `2` `3` `4` `5` | Accounts, Stale, Totals, Review, Status |
+| `1` `2` `3` `4` `5` `6` | Accounts, Stale, Totals, Review, Status, Activity |
 | `Esc` | Back to Accounts from an account; closes any dialog |
 | `F` | Focus the table filter |
 | `R` | Refresh now |

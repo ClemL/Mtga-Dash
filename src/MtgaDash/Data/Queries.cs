@@ -43,6 +43,10 @@ public sealed record AmbiguousPlayer(string DisplayName, string? LastLoginUtc, I
 
 public sealed record StatusMismatch(string Email, string? DisplayName, string? Status, long CustomDeckCount, long? WcRare, long? WcMythic);
 
+public sealed record PlayerRow(
+    string DisplayName, string? Email, string? FirstSeenUtc, string? LastLoginUtc, string? LastInventoryUtc,
+    long? Gems, long? Gold, long? WcRare, long? WcMythic, long Snapshots);
+
 public sealed record MappingRow(string DisplayName, string Email, string Source, bool PlayerSeen, bool AccountExists);
 
 public sealed record Review(IReadOnlyList<UnmatchedPlayer> Unmatched, IReadOnlyList<AmbiguousPlayer> Ambiguous, IReadOnlyList<StatusMismatch> StatusMismatches, IReadOnlyList<MappingRow> Mappings);
@@ -172,6 +176,23 @@ public sealed partial class Queries(Database db, Cards.CardNames? cards = null, 
                 emails.Contains(m.Email, StringComparer.OrdinalIgnoreCase)))
             .ToList();
         return new Review(unmatched, ambiguous, mismatches, mappings);
+    }
+
+    /// <summary>
+    /// Every display name seen in a log, matched or not, with its latest inventory: the Accounts tab only
+    /// lists accounts from the CSV, so this is where an unmatched name's data shows.
+    /// </summary>
+    public IReadOnlyList<PlayerRow> Players()
+    {
+        using var c = db.Open();
+        return c.Query<PlayerRow>("""
+            SELECT p.DisplayName, p.Email, p.FirstSeenUtc, p.LastLoginUtc,
+                   s.CapturedAtUtc AS LastInventoryUtc, s.Gems, s.Gold, s.WcRare, s.WcMythic,
+                   (SELECT COUNT(*) FROM Snapshots x WHERE x.DisplayName = p.DisplayName) AS Snapshots
+            FROM Players p
+            LEFT JOIN Snapshots s ON s.Id = (SELECT s2.Id FROM Snapshots s2 WHERE s2.DisplayName = p.DisplayName ORDER BY s2.CapturedAtUtc DESC LIMIT 1)
+            ORDER BY COALESCE(p.LastLoginUtc, '') DESC, p.DisplayName
+            """).ToList();
     }
 
     public IReadOnlyList<string> Statuses()

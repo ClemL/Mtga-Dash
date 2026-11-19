@@ -45,7 +45,17 @@ public sealed record SnapshotPoint(string CapturedAtUtc, long? Gems, long? Gold,
 
 public sealed record BoosterRow(string SetCode, long CollationId, long Count);
 
-public sealed record DeckRow(string DeckId, string Name, string? Format, long IsPrecon, string? LastPlayed, string? LastUpdated, string? CardsJson);
+/// <summary>One deck. Property-mapped: IsPrecon is a CASE expression, which has no type when an account has no decks.</summary>
+public sealed record DeckRow
+{
+    public string DeckId { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string? Format { get; set; }
+    public long IsPrecon { get; set; }
+    public string? LastPlayed { get; set; }
+    public string? LastUpdated { get; set; }
+    public string? CardsJson { get; set; }
+}
 
 public sealed record RankRow(string CapturedAtUtc, long? Season, string? ConstructedClass, long? ConstructedLevel, string? LimitedClass, long? LimitedLevel);
 
@@ -61,11 +71,13 @@ public sealed record AccountDetail(
     bool CardRarityKnown);
 
 /// <summary>A card known to be owned (from saved decks), with what the card database says about it.</summary>
-public sealed record OwnedCard(int CardId, int Copies, int Decks, IReadOnlyList<string> DeckNames, string? Name, string? Rarity, string? Set);
+public sealed record OwnedCard(int CardId, int Copies, int Decks, IReadOnlyList<string> DeckNames, string? Name, string? Rarity, string? Set,
+    string? Types = null, string? Cost = null, string? Colors = null, bool Alchemy = false);
 
 public sealed record CardHolder(string? Email, string DisplayName, int Copies);
 
-public sealed record CardAcrossAccounts(int CardId, string? Name, string? Rarity, string? Set, IReadOnlyList<CardHolder> Holders);
+public sealed record CardAcrossAccounts(int CardId, string? Name, string? Rarity, string? Set, IReadOnlyList<CardHolder> Holders,
+    string? Types = null, string? Cost = null, string? Colors = null, bool Alchemy = false);
 
 public sealed record CardsReport(
     bool RarityKnown, string? CardDbStatus, int MinCopies, IReadOnlyList<string> Rarities,
@@ -86,7 +98,10 @@ public sealed record SetTotal
 public sealed record Totals(
     long Gems, long Gold, long WcCommon, long WcUncommon, long WcRare, long WcMythic,
     IReadOnlyList<SetTotal> BoostersBySet, IReadOnlyDictionary<string, int> LoginBuckets,
-    int Accounts, int Players);
+    int Accounts, int Players, IReadOnlyList<Leader> MostBoosters, IReadOnlyList<Leader> MostRareWildcards);
+
+/// <summary>An account on a Totals leaderboard, with the numbers both boards show.</summary>
+public sealed record Leader(string Email, string? DisplayName, long Boosters, long WcRare, long WcMythic, string? LastLoginUtc);
 
 public sealed record UnmatchedPlayer(string DisplayName, string? LastLoginUtc, string ExceptionLine);
 
@@ -161,15 +176,16 @@ public sealed partial class Queries(Database db, Cards.CardNames? cards = null, 
             ? c.Query<BoosterRow>("SELECT SetCode, CollationId, Count FROM Boosters WHERE SnapshotId = @sid ORDER BY SetCode", new { sid }).ToList()
             : [];
         var decks = c.Query<DeckRow>(
-            "SELECT DeckId, Name, Format, IsPrecon, LastPlayed, LastUpdated, CardsJson FROM Decks WHERE DisplayName = @name ORDER BY IsPrecon, COALESCE(LastPlayed, '') DESC, Name",
+            $"SELECT DeckId, Name, Format, {PreconSql} AS IsPrecon, LastPlayed, LastUpdated, CardsJson FROM Decks d WHERE DisplayName = @name ORDER BY 4, COALESCE(LastPlayed, '') DESC, Name",
             new { name }).ToList();
         var ranks = c.Query<RankRow>(
             "SELECT CapturedAtUtc, Season, ConstructedClass, ConstructedLevel, LimitedClass, LimitedLevel FROM Ranks WHERE DisplayName = @name ORDER BY CapturedAtUtc DESC",
             new { name }).ToList();
         var custom = decks.Where(d => d.IsPrecon == 0).ToList();
         var names = cards?.Lookup(custom.SelectMany(d => CardIds(d.CardsJson))) ?? new Dictionary<int, string>();
-        var known = name is null ? [] : KnownCollection.For(SavedDecks(c, name));
-        var info = cards?.Info(known.Select(k => k.CardId)) ?? new Dictionary<int, CardInfo>();
+        var saved = name is null ? [] : SavedDecks(c, name).ToList();
+        var (canonical, info) = Canonical(saved);
+        var known = KnownCollection.For(saved, canonical);
         var owned = known.Select(k => ToOwned(k, info)).ToList();
         return new AccountDetail(a, snaps, boosters, custom, decks.Count - custom.Count, ranks, names, owned, cards?.HasRarity ?? false);
     }
@@ -177,7 +193,7 @@ public sealed partial class Queries(Database db, Cards.CardNames? cards = null, 
     private static OwnedCard ToOwned(KnownCard k, IReadOnlyDictionary<int, CardInfo> info)
     {
         var i = info.GetValueOrDefault(k.CardId);
-        return new OwnedCard(k.CardId, k.Copies, k.Decks, k.DeckNames, i?.Name, i?.Rarity, i?.Set);
+        return new OwnedCard(k.CardId, k.Copies, k.Decks, k.DeckNames, i?.Name, i?.Rarity, i?.Set, i?.Types, i?.Cost, i?.Colors, i?.Alchemy ?? false);
     }
 
     /// <summary>Every saved version of every deck, with the deck's current name for display.</summary>
@@ -190,17 +206,71 @@ public sealed partial class Queries(Database db, Cards.CardNames? cards = null, 
 
     public static readonly string[] DefaultRarities = ["mythic", "rare"];
 
+    /// <summary>A deck counts as a precon when MTGA says so or its name is on the hidden list (starter decks).</summary>
+    private const string PreconSql = "CASE WHEN d.IsPrecon = 1 OR EXISTS (SELECT 1 FROM IgnoredDeckNames i WHERE i.Name = d.Name) THEN 1 ELSE 0 END";
+
+    public sealed record DeckNameCount(string Name, long Accounts);
+
+    public sealed record DeckNames(IReadOnlyList<string> Hidden, IReadOnlyList<DeckNameCount> Common);
+
+    /// <summary>
+    /// The hidden names, and the custom deck names found on the most accounts: a name on dozens of accounts is
+    /// almost always a starter deck, so it is offered for hiding.
+    /// </summary>
+    public DeckNames DeckNameLists(int top = 25)
+    {
+        using var c = db.Open();
+        var hidden = c.Query<string>("SELECT Name FROM IgnoredDeckNames ORDER BY Name COLLATE NOCASE").ToList();
+        var common = c.Query<(string Name, long Accounts)>("""
+            SELECT d.Name, COUNT(DISTINCT d.DisplayName) AS Accounts FROM Decks d
+            WHERE d.IsPrecon = 0 AND NOT EXISTS (SELECT 1 FROM IgnoredDeckNames i WHERE i.Name = d.Name)
+            GROUP BY d.Name HAVING COUNT(DISTINCT d.DisplayName) >= 2
+            ORDER BY Accounts DESC, d.Name LIMIT @top
+            """, new { top }).Select(x => new DeckNameCount(x.Name, x.Accounts)).ToList();
+        return new DeckNames(hidden, common);
+    }
+
     /// <summary>
     /// Cards held at <paramref name="minCopies"/> or more, across accounts, filtered by rarity when the card
     /// database gives one. Without rarities the filter cannot apply, so every card qualifies.
     /// </summary>
+    /// <summary>
+    /// One id per card name (the lowest), so reprints and alternate printings count as one card. Ids the card
+    /// database does not know stay as they are.
+    /// </summary>
+    private (Func<int, int> Canonical, IReadOnlyDictionary<int, CardInfo> Info) Canonical(IReadOnlyList<SavedDeck> decks)
+    {
+        var ids = decks.SelectMany(d => KnownCollection.Totals(d.CardsJson).Keys).Distinct().ToList();
+        var info = cards?.Info(ids) ?? new Dictionary<int, CardInfo>();
+        var byName = info.Where(kv => kv.Value.Name is not null)
+            .GroupBy(kv => kv.Value.Name!, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.Min(kv => kv.Key), StringComparer.Ordinal);
+        int Map(int id) => info.TryGetValue(id, out var i) && i.Name is { } n ? byName[n] : id;
+        return (Map, info);
+    }
+
+    /// <summary>Every account holding at least one copy of a card (any printing), most copies first.</summary>
+    public IReadOnlyList<CardHolder> CardHolders(int cardId)
+    {
+        using var c = db.Open();
+        var saved = SavedDecks(c).ToList();
+        var (canonical, _) = Canonical(saved);
+        var target = canonical(cardId);
+        var emails = c.Query<(string DisplayName, string? Email)>("SELECT DisplayName, Email FROM Players").ToDictionary(p => p.DisplayName, p => p.Email);
+        return KnownCollection.ByAccount(saved, canonical)
+            .SelectMany(kv => kv.Value.Where(k => k.CardId == target).Select(k => new CardHolder(emails.GetValueOrDefault(kv.Key), kv.Key, k.Copies)))
+            .OrderByDescending(h => h.Copies).ThenBy(h => h.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
     public CardsReport Cards(int minCopies = 3, IReadOnlyList<string>? rarities = null)
     {
         rarities = rarities is { Count: > 0 } ? rarities.Select(r => r.ToLowerInvariant()).ToList() : DefaultRarities;
         using var c = db.Open();
-        var byAccount = KnownCollection.ByAccount(SavedDecks(c));
+        var saved = SavedDecks(c).ToList();
+        var (canonical, info) = Canonical(saved);
+        var byAccount = KnownCollection.ByAccount(saved, canonical);
         var emails = c.Query<(string DisplayName, string? Email)>("SELECT DisplayName, Email FROM Players").ToDictionary(p => p.DisplayName, p => p.Email);
-        var info = cards?.Info(byAccount.Values.SelectMany(l => l.Select(k => k.CardId)).Distinct()) ?? new Dictionary<int, CardInfo>();
         var rarityKnown = cards?.HasRarity ?? false;
 
         bool Wanted(KnownCard k) => k.Copies >= minCopies
@@ -223,7 +293,8 @@ public sealed partial class Queries(Database db, Cards.CardNames? cards = null, 
             {
                 var i = info.GetValueOrDefault(kv.Key);
                 return new CardAcrossAccounts(kv.Key, i?.Name, i?.Rarity, i?.Set,
-                    kv.Value.OrderByDescending(h => h.Copies).ThenBy(h => h.DisplayName, StringComparer.OrdinalIgnoreCase).ToList());
+                    kv.Value.OrderByDescending(h => h.Copies).ThenBy(h => h.DisplayName, StringComparer.OrdinalIgnoreCase).ToList(),
+                    i?.Types, i?.Cost, i?.Colors, i?.Alchemy ?? false);
             })
             .OrderByDescending(x => x.Holders.Count).ThenBy(x => x.Name ?? "~").ThenBy(x => x.CardId)
             .ToList();
@@ -239,7 +310,7 @@ public sealed partial class Queries(Database db, Cards.CardNames? cards = null, 
         var rows = c.Query<(string DisplayName, string Name, long Recorded)>("""
             SELECT d.DisplayName, d.Name,
                    EXISTS(SELECT 1 FROM DeckLists l WHERE l.DisplayName = d.DisplayName AND l.DeckId = d.DeckId) AS Recorded
-            FROM Decks d WHERE d.IsPrecon = 0
+            FROM Decks d WHERE d.IsPrecon = 0 AND NOT EXISTS (SELECT 1 FROM IgnoredDeckNames i WHERE i.Name = d.Name)
             """).ToList();
         return rows.GroupBy(r => r.DisplayName)
             .Select(g =>
@@ -285,8 +356,15 @@ public sealed partial class Queries(Database db, Cards.CardNames? cards = null, 
         foreach (var l in logins) buckets[Bucket(l, now)]++;
 
         var players = c.ExecuteScalar<int>("SELECT COUNT(*) FROM Players");
-        return new Totals(sums.Item1, sums.Item2, sums.Item3, sums.Item4, sums.Item5, sums.Item6, sets, buckets, logins.Count, players);
+        // From the latest snapshot of each account in the CSV, so every leader can be opened and logged into.
+        var accountsLatest = c.Query<AccountLatest>("SELECT * FROM vAccountLatest WHERE SnapshotId IS NOT NULL").ToList();
+        static Leader L(AccountLatest a) => new(a.Email, a.DisplayName, a.BoosterTotal, a.WcRare ?? 0, a.WcMythic ?? 0, a.LastLoginUtc);
+        var mostBoosters = accountsLatest.Where(a => a.BoosterTotal > 0).OrderByDescending(a => a.BoosterTotal).ThenByDescending(a => a.WcRare).Take(LeaderCount).Select(L).ToList();
+        var mostRares = accountsLatest.Where(a => (a.WcRare ?? 0) > 0).OrderByDescending(a => a.WcRare).ThenByDescending(a => a.WcMythic).Take(LeaderCount).Select(L).ToList();
+        return new Totals(sums.Item1, sums.Item2, sums.Item3, sums.Item4, sums.Item5, sums.Item6, sets, buckets, logins.Count, players, mostBoosters, mostRares);
     }
+
+    public const int LeaderCount = 20;
 
     public static string Bucket(string? lastLoginUtc, DateTime nowUtc)
     {

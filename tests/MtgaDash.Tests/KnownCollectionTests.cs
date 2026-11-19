@@ -134,3 +134,89 @@ public sealed class KnownCollectionTests
         Assert.IsTrue(report.Cards.All(x => x.Rarity is null && x.Name is null));
     }
 }
+
+[TestClass]
+public sealed class CardDetailsTests
+{
+    [TestMethod]
+    [DataRow("o2oUoU", "{2}{U}{U}")]
+    [DataRow("oXoRoR", "{X}{R}{R}")]
+    [DataRow("o1o(W/U)", "{1}{W/U}")]
+    [DataRow("{1}{G}", "{1}{G}")]
+    [DataRow("", null)]
+    public void Mana_text_becomes_symbols(string raw, string? expected) => Assert.AreEqual(expected, CardNames.ManaCost(raw));
+
+    [TestMethod]
+    [DataRow("1,2", null, "WU")]
+    [DataRow("5,3", null, "BG")]
+    [DataRow(null, "{2}{R}{G}", "RG")]
+    [DataRow("", null, "C")]
+    [DataRow(null, "{3}", "C")]
+    [DataRow(null, null, null)]
+    public void Colors_come_from_the_column_or_the_cost(string? colors, string? cost, string? expected) =>
+        Assert.AreEqual(expected, CardNames.ColorLetters(colors, cost));
+
+    [TestMethod]
+    public void Type_numbers_are_only_a_fallback() =>
+        Assert.AreEqual("Artifact Creature", CardNames.TypesFromEnum("1,2"));
+
+    [TestMethod]
+    public void The_reader_returns_type_line_cost_color_and_alchemy_and_printings_merge()
+    {
+        using var t = new TempDb();
+        var path = Path.Combine(t.Folder, "Raw_CardDatabase_x.mtga");
+        using (var c = new SqliteConnection($"Data Source={path};Pooling=False"))
+        {
+            c.Open();
+            c.Execute("""
+                CREATE TABLE Cards(GrpId INTEGER, TitleId INTEGER, TypeTextId INTEGER, Rarity INTEGER, ExpansionCode TEXT, OldSchoolManaText TEXT, Colors TEXT, IsRebalanced INTEGER);
+                CREATE TABLE Localizations_enUS(LocId INTEGER, Formatted INTEGER, Loc TEXT);
+                INSERT INTO Cards VALUES (100, 1, 9, 4, 'DMU', 'o1oG', '5', 0), (200, 1, 9, 4, 'J22', 'o1oG', '5', 0),
+                                         (300, 2, 8, 5, 'YDMU', 'o2oUoU', '2', 0), (400, 3, 7, 4, 'DMU', '', '', 0);
+                INSERT INTO Localizations_enUS VALUES (1, 0, 'Elf Lord'), (2, 0, 'A-Tide Caller'), (3, 0, 'Shocking Land'),
+                    (9, 0, 'Creature — Elf'), (8, 0, 'Instant'), (7, 0, 'Land');
+                """);
+        }
+        var cards = CardNames.Read(path, out var description);
+        Assert.AreEqual(new CardInfo("Elf Lord", "rare", "DMU", "Creature — Elf", "{1}{G}", "G", false), cards[100]);
+        Assert.IsTrue(cards[300].Alchemy);
+        Assert.AreEqual(("Land", "C"), (cards[400].Types, cards[400].Colors));
+        StringAssert.Contains(description, "type line from TypeTextId");
+
+        // Two printings of Elf Lord, 2 + 2 in one deck: 4 copies of one card.
+        File.WriteAllText(t.File("p.log"), Fixtures.Text([Fixtures.Startup(), Fixtures.Login("a#1"), .. Fixtures.StartHook(),
+            """[UnityCrossThreadLogger]==> DeckUpsertDeckV3 {"id":"x","request":"{\"Summary\":{\"DeckId\":\"d1\",\"Name\":\"Elves\"},\"Deck\":{\"MainDeck\":[{\"cardId\":100,\"quantity\":2},{\"cardId\":200,\"quantity\":2},{\"cardId\":300,\"quantity\":3}]}}"}"""]));
+        t.Ingestor.IngestFile(t.File("p.log"));
+        var report = new Queries(t.Db, new CardNames(path, Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance)).Cards(minCopies: 3);
+        var elf = report.Cards.Single(x => x.Name == "Elf Lord");
+        Assert.AreEqual((100, 4, "{1}{G}", "G", "Creature — Elf"), (elf.CardId, elf.Holders.Single().Copies, elf.Cost, elf.Colors, elf.Types));
+        Assert.IsTrue(report.Cards.Single(x => x.Name == "A-Tide Caller").Alchemy);
+        Assert.AreEqual(4, new Queries(t.Db, new CardNames(path, Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance)).CardHolders(200).Single().Copies,
+            "asking by either printing finds the same card");
+    }
+
+    [TestMethod]
+    public void Hidden_deck_names_count_as_precons_and_can_be_shown_again()
+    {
+        using var t = new TempDb();
+        var body = System.Text.Json.JsonSerializer.Serialize(new { Summaries = new[] { Fixtures.Deck("k", "Keep the Peace", "Standard", null), Fixtures.Deck("m", "My brew", "Standard", null), Fixtures.Deck("s", "Starter X", "Standard", null) } });
+        File.WriteAllText(t.File("p.log"), Fixtures.Text([Fixtures.Startup(), Fixtures.Login("a#1"), "<== DeckGetDeckSummariesV3(q)", body,
+            Fixtures.Startup("11/13/2026 2:00:00 AM"), Fixtures.Login("b#2"), "<== DeckGetDeckSummariesV3(q)", body]));
+        t.Ingestor.IngestFile(t.File("p.log"));
+        using var c = t.Db.Open();
+        Writer.ImportAccounts(c, [new Accounts.AccountRow("x+a@example.com", "", "", "", "")]);
+        c.Execute("UPDATE Accounts SET DisplayName = 'a#1'");
+        var q = new Queries(t.Db);
+
+        Assert.AreEqual(2, q.Accounts().Single().CustomDeckCount, "Keep the Peace is hidden from the start");
+        var lists = q.DeckNameLists();
+        CollectionAssert.Contains(lists.Hidden.ToList(), "Keep the Peace");
+        CollectionAssert.AreEqual(new[] { "My brew", "Starter X" }, lists.Common.Select(n => n.Name).ToArray(), "names on 2+ accounts are offered");
+
+        Writer.HideDeckName(c, "starter x");
+        Assert.AreEqual(1, q.Accounts().Single().CustomDeckCount, "hiding is case-insensitive");
+        Assert.AreEqual(2, q.Account("x+a@example.com")!.PreconCount);
+        Assert.IsTrue(Writer.ShowDeckName(c, "Keep the Peace"));
+        Assert.AreEqual(2, q.Accounts().Single().CustomDeckCount);
+    }
+}

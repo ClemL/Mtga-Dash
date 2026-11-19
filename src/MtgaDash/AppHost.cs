@@ -107,6 +107,8 @@ public static class AppHost
         api.MapGet("/totals", (Queries q) => q.Totals());
         api.MapGet("/review", (Queries q) => q.Review());
         api.MapGet("/statuses", (Queries q) => q.Statuses());
+        api.MapGet("/cards/{id:int}/holders", (Queries q, int id) => q.CardHolders(id));
+        api.MapGet("/decknames", (Queries q) => q.DeckNameLists());
         api.MapGet("/cards", (Queries q, int? minCopies, string? rarity) =>
             q.Cards(Math.Clamp(minCopies ?? 3, 1, 99), rarity?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)));
         api.MapGet("/status", (StatusTracker s) => s.Snapshot());
@@ -150,6 +152,21 @@ public static class AppHost
         {
             var (started, message) = g.Launch();
             return Results.Ok(new { started, message });
+        });
+        write.MapPost("/decknames/hidden", (MappingRequest req, Database db, ChangeNotifier notifier) =>
+        {
+            if (string.IsNullOrWhiteSpace(req.DisplayName)) return Results.Problem("A deck name is required.", statusCode: StatusCodes.Status400BadRequest);
+            using (var c = db.Open()) Writer.HideDeckName(c, req.DisplayName);
+            notifier.Notify();
+            return Results.NoContent();
+        });
+        write.MapDelete("/decknames/hidden/{name}", (string name, Database db, ChangeNotifier notifier) =>
+        {
+            bool removed;
+            using (var c = db.Open()) removed = Writer.ShowDeckName(c, name);
+            if (!removed) return Results.NotFound();
+            notifier.Notify();
+            return Results.NoContent();
         });
         write.MapPost("/reimport", (IngestionService s) => Results.Ok(new { imported = s.ImportAccounts() }));
         write.MapPost("/export", (StaticExporter e) =>

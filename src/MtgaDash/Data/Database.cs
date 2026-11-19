@@ -158,6 +158,32 @@ public sealed class Database
             UNIQUE(File, Line, Kind, Summary));
         CREATE INDEX IX_ActivityEntries_At ON ActivityEntries(AtUtc);
         """,
+        // 3: deck names treated like precons (starter decks every account has), and the view that counts custom decks.
+        """
+        CREATE TABLE IgnoredDeckNames(Name TEXT PRIMARY KEY COLLATE NOCASE, AddedUtc TEXT NOT NULL);
+        INSERT INTO IgnoredDeckNames(Name, AddedUtc) VALUES
+            ('Aerial Domination', '2026-11-19T00:00:00.000Z'),
+            ('Forest''s Might', '2026-11-19T00:00:00.000Z'),
+            ('Imported Deck', '2026-11-19T00:00:00.000Z'),
+            ('Keep the Peace', '2026-11-19T00:00:00.000Z');
+        DROP VIEW vAccountLatest;
+        CREATE VIEW vAccountLatest AS
+        SELECT
+            a.Email, a.Alias, a.DisplayName, a.Status, a.Notes, a.MiscNotes, a.NoteSource, a.MatchState,
+            p.FirstSeenUtc, p.LastLoginUtc,
+            s.Id AS SnapshotId, s.CapturedAtUtc,
+            s.Gems, s.Gold, s.WcCommon, s.WcUncommon, s.WcRare, s.WcMythic, s.VaultProgress, s.WcTrackPosition,
+            (SELECT COALESCE(SUM(b.Count), 0) FROM Boosters b WHERE b.SnapshotId = s.Id) AS BoosterTotal,
+            r.Season, r.ConstructedClass, r.ConstructedLevel, r.LimitedClass, r.LimitedLevel,
+            (SELECT COUNT(*) FROM Decks d WHERE d.DisplayName = a.DisplayName AND d.IsPrecon = 0
+                AND NOT EXISTS (SELECT 1 FROM IgnoredDeckNames i WHERE i.Name = d.Name)) AS CustomDeckCount
+        FROM Accounts a
+        LEFT JOIN Players p ON p.DisplayName = a.DisplayName
+        LEFT JOIN Snapshots s ON s.Id = (
+            SELECT s2.Id FROM Snapshots s2 WHERE s2.DisplayName = a.DisplayName ORDER BY s2.CapturedAtUtc DESC LIMIT 1)
+        LEFT JOIN Ranks r ON r.DisplayName = a.DisplayName AND r.CapturedAtUtc = (
+            SELECT MAX(r2.CapturedAtUtc) FROM Ranks r2 WHERE r2.DisplayName = a.DisplayName);
+        """,
     ];
 }
 

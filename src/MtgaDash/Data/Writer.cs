@@ -179,6 +179,12 @@ public static class Writer
         }, tx);
     }
 
+    public static void HideDeckName(SqliteConnection c, string name) =>
+        c.Execute("INSERT OR IGNORE INTO IgnoredDeckNames(Name, AddedUtc) VALUES (@name, @at)", new { name = name.Trim(), at = Time.Format(DateTime.UtcNow) });
+
+    public static bool ShowDeckName(SqliteConnection c, string name) =>
+        c.Execute("DELETE FROM IgnoredDeckNames WHERE Name = @name", new { name = name.Trim() }) > 0;
+
     /// <summary>Upserts by email and never deletes, so a trimmed CSV cannot lose an account's history.</summary>
     public static int ImportAccounts(SqliteConnection c, IEnumerable<AccountRow> rows)
     {

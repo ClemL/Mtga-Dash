@@ -106,6 +106,40 @@ public sealed partial class PageTests
             """);
     }
 
+    [TestMethod]
+    public void Card_filters_by_type_lands_and_alchemy()
+    {
+        RunPure("""
+            const any = { type: "any", ignoreLands: false, alchemy: "include" };
+            const creature = { types: "Legendary Creature — Elf Druid", alchemy: false };
+            const land = { types: "Land", alchemy: false };
+            const dfcLand = { types: "Legendary Artifact Land", alchemy: false };
+            const alch = { types: "Instant", alchemy: true };
+            const unknown = { types: null, alchemy: false };
+            assert.ok(P.cardMatches(creature, any));
+            assert.ok(!P.cardMatches(land, { ...any, ignoreLands: true }));
+            assert.ok(!P.cardMatches(dfcLand, { ...any, ignoreLands: true }));
+            assert.ok(P.cardMatches(unknown, { ...any, ignoreLands: true }), "unknown type is not a land");
+            assert.ok(P.cardMatches(creature, { ...any, type: "creature" }));
+            assert.ok(!P.cardMatches(alch, { ...any, type: "creature" }));
+            assert.ok(!P.cardMatches({ types: "Enchantment Creature" , alchemy: false }, { ...any, type: "artifact" }));
+            assert.ok(P.cardMatches(unknown, { ...any, type: "creature" }), "no type line: the type filter cannot apply");
+            assert.ok(!P.cardMatches(alch, { ...any, alchemy: "exclude" }));
+            assert.ok(P.cardMatches(alch, { ...any, alchemy: "only" }));
+            assert.ok(!P.cardMatches(creature, { ...any, alchemy: "only" }));
+            """);
+    }
+
+    [TestMethod]
+    public void Holders_group_four_or_more_then_three_two_one()
+    {
+        RunPure("""
+            const g = P.groupByCopies([{ copies: 6 }, { copies: 4 }, { copies: 2 }, { copies: 1 }, { copies: 2 }]);
+            assert.deepEqual(g.map(x => [x.copies, x.holders.length]), [[4, 2], [2, 2], [1, 1]]);
+            assert.deepEqual(P.groupByCopies([]), []);
+            """);
+    }
+
     private static string Boot(string stored, string storage = "ok") => Node.Run($$"""
         const vm = require("node:vm");
         const stored = {{stored}};

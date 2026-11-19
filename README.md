@@ -7,7 +7,8 @@ single-page dashboard on `http://localhost:5080` that updates live.
 - **Accounts**: every account from the CSV, with gems, gold, wildcards, boosters, custom decks and a
   color-coded last login. Search, filter by status, sort by any column, click for the detail.
 - **Stale**: accounts never logged in or not logged in for N days, oldest first, with one-click email copy.
-- **Totals**: gems, gold and wildcards across all accounts, boosters by set, last-login buckets.
+- **Totals**: gems, gold and wildcards across all accounts, boosters by set, last-login buckets, and the 20
+  accounts with the most boosters and with the most rare wildcards.
 - **Account detail**: gems/gold and rare/mythic history charts, latest boosters, rank, custom decks with
   card lists (precons collapsed).
 - **Review**: unmatched and ambiguous display names, mapped to their account with one click, and
@@ -290,16 +291,34 @@ the deck. A saved deck is taken as proof of ownership, so:
 - an account owns **at least** the most copies of a card that any single saved deck held (main deck,
   sideboard, commander and companion added up; never summed across decks, which share copies);
 - every version of every deck counts, so cutting a card from a deck later does not lower the number;
-- cards never saved in a deck are missing: every number is a minimum.
+- cards never saved in a deck are missing: every number is a minimum;
+- printings of the same card (reprints, alternate art) count as one card: 2 + 2 in one deck is 4 copies;
+- only rares and mythics are listed (once the card database gives rarity).
 
 To record an account's cards, open each deck in MTGA's deck builder and press **Done**. **Decks not recorded
-yet**, at the bottom of the Cards tab and on each account's page, lists the custom decks still to do. The **Cards** tab
-(key `7`) lists each card held at the chosen copies by any account, with who holds it; the filter matches
-card, set or account. The **R/M 3+** column on the Accounts table counts them per account, and each
-account's detail page has a **Known cards** table.
+yet**, at the bottom of the Cards tab and on each account's page, lists the custom decks still to do.
 
-Rarity, card names and sets come from MTGA's card database: set `CardDbPath` (above). Without it, cards are
-listed by id, the rarity filter is off, and basic lands are included.
+The **Cards** tab (key `7`) has two views:
+
+- **By card**: each card held at the chosen copies (1–4), with its cost, color, type line and who holds it.
+  **Click a card** to see every account that has it, grouped 4+, 3, 2 and 1 copies, with a button to copy
+  each group's emails.
+- **By account**: accounts ranked by how many qualifying cards they hold, each card clickable the same way.
+
+Filters, remembered on this device and shared with each account's **Known rares and mythics** table and the
+**R/M 3+** column on the Accounts table: **Type** (creature, instant, sorcery, enchantment, artifact,
+planeswalker, battle, land), **Ignore lands** (on by default) and **Alchemy** (include, exclude, or only
+Alchemy: rebalanced `A-` cards and the digital-only Y sets).
+
+Names, rarity, cost, color and type come from MTGA's card database: set `CardDbPath` (above). Without it,
+cards are listed by id, every rarity is included and the type filters cannot apply.
+
+### Starter deck names
+
+Decks every account has (Aerial Domination, Forest's Might, Imported Deck, Keep the Peace, …) are treated like
+precons: not counted as custom decks, not listed as decks to record, folded into the precon count. **Deck
+names** at the bottom of the Cards tab lists the custom deck names found on the most accounts with a **Hide**
+button, and the hidden ones with **Show**; each deck on an account's page also has **Hide this name**.
 
 ## Static export (phone, PC off)
 

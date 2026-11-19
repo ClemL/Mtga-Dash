@@ -19,22 +19,27 @@ public static class KnownCollection
 {
     private const int MaxDeckNames = 3;
 
-    public static Dictionary<string, List<KnownCard>> ByAccount(IEnumerable<SavedDeck> decks)
+    /// <param name="canonical">Maps a card id to the id that stands for the card: every printing of one card
+    /// shares a name, and 2 copies of one printing plus 2 of another in one deck are 4 copies.</param>
+    public static Dictionary<string, List<KnownCard>> ByAccount(IEnumerable<SavedDeck> decks, Func<int, int>? canonical = null)
     {
         var result = new Dictionary<string, List<KnownCard>>(StringComparer.Ordinal);
         foreach (var account in decks.GroupBy(d => d.DisplayName, StringComparer.Ordinal))
-            result[account.Key] = For(account);
+            result[account.Key] = For(account, canonical);
         return result;
     }
 
-    public static List<KnownCard> For(IEnumerable<SavedDeck> decks)
+    public static List<KnownCard> For(IEnumerable<SavedDeck> decks, Func<int, int>? canonical = null)
     {
         var copies = new Dictionary<int, int>();
         var deckIds = new Dictionary<int, HashSet<string>>();
         var deckNames = new Dictionary<int, List<string>>();
         foreach (var deck in decks)
         {
-            foreach (var (id, qty) in Totals(deck.CardsJson))
+            var totals = Totals(deck.CardsJson);
+            if (canonical is not null)
+                totals = totals.GroupBy(kv => canonical(kv.Key)).ToDictionary(g => g.Key, g => g.Sum(kv => kv.Value));
+            foreach (var (id, qty) in totals)
             {
                 copies[id] = Math.Max(copies.GetValueOrDefault(id), qty);
                 if (!deckIds.TryGetValue(id, out var ids)) deckIds[id] = ids = [];

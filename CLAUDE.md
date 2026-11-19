@@ -66,7 +66,11 @@ tools/Update-MtgaDash.ps1         stop, pull, publish, start
 * **`CardDbPath` is read from configuration on every lookup**, not from the startup options, so saving it in
   `appsettings.Production.json` applies without a restart (ASP.NET reloads that file). Keep it that way.
 * **Owned counts are a minimum, from saved decks.** `KnownCollection` takes the most copies in any one deck
-  version, never a sum across decks. MTGA's rarity numbers are mapped in `CardNames.RarityName`; an
+  version, never a sum across decks; printings with the same name count as one card (`Queries.Canonical`).
+  Card filters (type, lands, Alchemy) run in the page, in `cardMatches` in the pure block, so the card list,
+  the Accounts column and each account's table always agree.
+* **Hidden deck names (`IgnoredDeckNames`) are precons everywhere.** Any query that separates custom decks
+  must exclude them, as `vAccountLatest`, `Queries.PreconSql` and `Unrecorded` do. MTGA's rarity numbers are mapped in `CardNames.RarityName`; an
   unknown value stays null rather than guessed.
 * **Every write is an idempotent upsert on a natural key.** Re-ingesting a file, or the live log and its
   archived copy, must change nothing. `IngestionTests.Dump` compares whole databases: use it for new tables.

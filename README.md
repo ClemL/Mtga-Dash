@@ -9,8 +9,9 @@ single-page dashboard on `http://localhost:5080` that updates live.
 - **Stale**: accounts never logged in or not logged in for N days, oldest first, with one-click email copy.
 - **Totals**: gems, gold and wildcards across all accounts, boosters by set, last-login buckets, and the 20
   accounts with the most boosters and with the most rare wildcards.
-- **Account detail**: gems/gold and rare/mythic history charts, latest boosters, rank, custom decks with
-  card lists (precons collapsed).
+- **Account detail**: gems, gold, rare and mythic wildcards, vault and boosters, a rare/mythic wildcard
+  history chart, latest boosters, and custom decks with card lists (precons collapsed). Rank, common and
+  uncommon wildcards are still recorded but not shown.
 - **Review**: unmatched and ambiguous display names, mapped to their account with one click, and
   accounts marked unused that still hold decks or rare wildcards.
 - **Status**: when the last poll ran, how far each log file has been read, recent parse warnings, and a

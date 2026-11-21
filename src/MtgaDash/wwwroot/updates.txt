@@ -30,3 +30,4 @@
 2026-11-19T21:42:00Z - Card filters for type, ignoring lands and Alchemy cards, and cost and color columns; printings of a card count together and only rares and mythics are listed
 2026-11-19T21:42:00Z - Starter deck names (Aerial Domination, Forest's Might, Imported Deck, Keep the Peace and any you hide) are treated like precons
 2026-11-19T21:42:00Z - Totals tab lists the accounts with the most boosters and the most rare wildcards
+2026-11-21T08:25:00Z - Account pages and the Accounts table no longer show rank, common and uncommon wildcards or the gems and gold chart

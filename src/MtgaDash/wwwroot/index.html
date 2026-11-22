@@ -860,8 +860,6 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
     { key: "lastLoginUtc", label: "Last login" },
     { key: "gems", label: "Gems", num: true },
     { key: "gold", label: "Gold", num: true },
-    { key: "wcCommon", label: "C", num: true, title: "Common wildcards" },
-    { key: "wcUncommon", label: "U", num: true, title: "Uncommon wildcards" },
     { key: "wcRare", label: "R", num: true, title: "Rare wildcards" },
     { key: "wcMythic", label: "M", num: true, title: "Mythic wildcards" },
     { key: "boosterTotal", label: "Boosters", num: true },
@@ -927,8 +925,6 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
         h("td", null, loginCell(a)),
         h("td", { class: "num", text: fmt(a.gems) }),
         h("td", { class: "num", text: fmt(a.gold) }),
-        h("td", { class: "num", text: fmt(a.wcCommon) }),
-        h("td", { class: "num", text: fmt(a.wcUncommon) }),
         h("td", { class: "num", text: fmt(a.wcRare) }),
         h("td", { class: "num", text: fmt(a.wcMythic) }),
         h("td", { class: "num", text: a.snapshotId == null ? "—" : fmt(a.boosterTotal) }),
@@ -1022,7 +1018,6 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
       tile("Gold", fmt(t.gold)),
       tile("Rare wildcards", fmt(t.wcRare)),
       tile("Mythic wildcards", fmt(t.wcMythic)),
-      tile("Uncommon / common", fmt(t.wcUncommon) + " / " + fmt(t.wcCommon)),
       tile("Display names seen", fmt(t.players), fmt(t.accounts) + " accounts in the CSV")));
     var sets = h("tbody");
     t.boostersBySet.forEach(function (b) {
@@ -1654,33 +1649,20 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
 
     view.appendChild(h("div", { class: "tiles" },
       tile("Gems", fmt(a.gems)), tile("Gold", fmt(a.gold)),
-      tile("Wildcards C / U", fmt(a.wcCommon) + " / " + fmt(a.wcUncommon)),
       tile("Wildcards R / M", fmt(a.wcRare) + " / " + fmt(a.wcMythic)),
       tile("Vault", a.vaultProgress == null ? "—" : a.vaultProgress.toFixed(1) + "%"),
-      tile("Rank", a.constructedClass ? a.constructedClass + " " + (a.constructedLevel || "") : "—",
-        a.limitedClass ? "Limited " + a.limitedClass + " " + (a.limitedLevel || "") : (a.season ? "Season " + a.season : null))));
-
-    view.appendChild(h("div", { class: "grid-2" },
-      h("section", { class: "card" }, h("h3", { text: "Gems and gold" }),
-        lineChart("Gems and gold over time", d.snapshots, [{ key: "gems", label: "Gems", color: "--series-1" }, { key: "gold", label: "Gold", color: "--series-2" }])),
-      h("section", { class: "card" }, h("h3", { text: "Rare and mythic wildcards" }),
-        lineChart("Rare and mythic wildcards over time", d.snapshots, [{ key: "wcRare", label: "Rare", color: "--series-1" }, { key: "wcMythic", label: "Mythic", color: "--series-2" }]))));
+      tile("Boosters", a.snapshotId == null ? "—" : fmt(a.boosterTotal))));
 
     var boosters = d.boosters.length
       ? h("div", { class: "table-wrap" }, h("table", null, h("thead", null, h("tr", null, h("th", { text: "Set" }), h("th", { class: "num", text: "Count" }))),
         h("tbody", null, d.boosters.map(function (b) { return h("tr", null, h("td", { text: b.setCode }), h("td", { class: "num", text: fmt(b.count) })); }))))
       : h("p", { class: "muted", text: "No boosters in the latest snapshot." });
-    var ranks = d.ranks.length
-      ? h("div", { class: "table-wrap" }, h("table", null, h("thead", null, h("tr", null, ["Captured", "Season", "Constructed", "Limited"].map(function (t) { return h("th", { text: t }); }))),
-        h("tbody", null, d.ranks.slice(0, 10).map(function (r) {
-          return h("tr", null, h("td", { text: localTime(r.capturedAtUtc) }), h("td", { text: r.season == null ? "—" : String(r.season) }),
-            h("td", { text: r.constructedClass ? r.constructedClass + " " + (r.constructedLevel || "") : "—" }),
-            h("td", { text: r.limitedClass ? r.limitedClass + " " + (r.limitedLevel || "") : "—" }));
-        }))))
-      : h("p", { class: "muted", text: "No rank recorded." });
+    // Rank, common and uncommon wildcards, and gems and gold over time are still recorded, just not shown:
+    // the owner tracks rares, mythics and boosters only.
     view.appendChild(h("div", { class: "grid-2" },
-      h("section", { class: "card" }, h("h3", { text: "Boosters" }), boosters),
-      h("section", { class: "card" }, h("h3", { text: "Rank" }), ranks)));
+      h("section", { class: "card" }, h("h3", { text: "Rare and mythic wildcards" }),
+        lineChart("Rare and mythic wildcards over time", d.snapshots, [{ key: "wcRare", label: "Rare", color: "--series-1" }, { key: "wcMythic", label: "Mythic", color: "--series-2" }])),
+      h("section", { class: "card" }, h("h3", { text: "Boosters" }), boosters)));
 
     var decks = h("section", { class: "card" }, h("h3", { text: "Custom decks (" + d.customDecks.length + ")" }));
     if (!d.customDecks.length) decks.appendChild(h("p", { class: "muted", text: "No custom decks." }));

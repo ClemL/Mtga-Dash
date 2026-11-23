@@ -9,9 +9,9 @@ single-page dashboard on `http://localhost:5080` that updates live.
 - **Stale**: accounts never logged in or not logged in for N days, oldest first, with one-click email copy.
 - **Totals**: gems, gold and wildcards across all accounts, boosters by set, last-login buckets, and the 20
   accounts with the most boosters and with the most rare wildcards.
-- **Account detail**: gems, gold, rare and mythic wildcards, vault and boosters, a rare/mythic wildcard
-  history chart, latest boosters, and custom decks with card lists (precons collapsed). Rank, common and
-  uncommon wildcards are still recorded but not shown.
+- **Account detail**: gems, gold, rare and mythic wildcards, vault and boosters; the account's rares and
+  mythics at 3+ copies as card images (placeholders where there is no image yet); its known rares and mythics;
+  and its custom decks with card lists (precons collapsed).
 - **Review**: unmatched and ambiguous display names, mapped to their account with one click, and
   accounts marked unused that still hold decks or rare wildcards.
 - **Status**: when the last poll ran, how far each log file has been read, recent parse warnings, and a
@@ -78,6 +78,7 @@ Any setting can be overridden on the command line, e.g. `--MtgaDash:Port=5090`.
 | `StartPage` | `/#/activity` | The page opened at startup and written to the console, e.g. `/#/accounts`. |
 | `LaunchGame` | `false` | Start MTGA when the dashboard starts, unless it is already running; see below. |
 | `GamePath` | `C:\Program Files\Wizards of the Coast\MTGA\MTGA.exe` | The game to start, or a launcher URI such as `steam://rungameid/2141910`. |
+| `CardImageFolder` | *(empty)* | Where card images are kept; empty means `card-images` beside the database. |
 | `ExceptionsPath` | *(empty)* | Where Review-tab mappings are saved; empty means `account-exceptions.json` beside the database. |
 
 ### How ingestion works
@@ -313,6 +314,31 @@ Alchemy: rebalanced `A-` cards and the digital-only Y sets).
 
 Names, rarity, cost, color and type come from MTGA's card database: set `CardDbPath` (above). Without it,
 cards are listed by id, every rarity is included and the type filters cannot apply.
+
+### Card images
+
+Each account's page shows its rares and mythics held at 3 or more copies as card images, 4-ofs first. The
+images are downloaded once, from [Scryfall](https://scryfall.com/docs/api), into `card-images` beside the
+database (setting `CardImageFolder`), one JPEG per card name with the card's **newest art**. Only rares and
+mythics some account holds at 3+ copies are fetched; card names need `CardDbPath`.
+
+Two ways to fetch the missing ones:
+
+- **Download missing images** on an account's page, or on the Status tab, or `Ctrl+K` → "Download missing
+  card images". Progress shows on the page.
+- From a command prompt, while the dashboard runs or not:
+
+  ```powershell
+  C:\dev\mtga\app\MtgaDash.exe --download-card-images
+  ```
+
+  It prints each card as it goes and exits. Run it again after saving new decks; it only fetches what is
+  missing.
+
+Requests are paced at 10 per second, as Scryfall asks. A card Scryfall has no image for yet (a brand-new or
+digital-only card) shows a placeholder with its name, cost and type, and is asked for again after a week. The
+list of missing names is also at `http://localhost:5080/api/cardimages/missing` (one per line) for any other
+tool. The static export shows placeholders: images are not embedded.
 
 ### Starter deck names
 

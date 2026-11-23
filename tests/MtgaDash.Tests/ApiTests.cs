@@ -191,6 +191,18 @@ public sealed class ApiTests
     }
 
     [TestMethod]
+    public async Task Card_images_status_missing_list_and_file_serving()
+    {
+        var status = await _http.GetFromJsonAsync<JsonElement>("/api/cardimages");
+        StringAssert.EndsWith(status.GetProperty("folder").GetString(), "card-images");
+        Assert.AreEqual(0, status.GetProperty("wanted").GetInt32(), "no card database here, so no card can be named");
+        Assert.AreEqual("", await _http.GetStringAsync("/api/cardimages/missing"));
+        Assert.AreEqual(HttpStatusCode.NotFound, (await _http.GetAsync("/card-images/Nothing.jpg")).StatusCode);
+        Assert.AreEqual(HttpStatusCode.NotFound, (await _http.GetAsync("/card-images/..%2Fmtga.db.jpg")).StatusCode);
+        Assert.AreEqual(HttpStatusCode.Forbidden, (await _http.PostAsync("/api/cardimages/download", null)).StatusCode);
+    }
+
+    [TestMethod]
     public async Task The_page_is_served_with_the_boot_script_and_config()
     {
         var html = await _http.GetStringAsync("/");

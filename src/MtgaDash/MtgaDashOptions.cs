@@ -28,6 +28,12 @@ public sealed class MtgaDashOptions
     /// </summary>
     public string CardDbPath { get; set; } = "";
 
+    /// <summary>Where card images are kept. Empty means <c>card-images</c> beside the database.</summary>
+    public string CardImageFolder { get; set; } = "";
+
+    /// <summary>The Scryfall API the image downloader asks; changed only for testing.</summary>
+    public string CardImageApi { get; set; } = "https://api.scryfall.com";
+
     /// <summary>
     /// Where Review-tab exception mappings are saved. Empty means <c>account-exceptions.json</c> beside the
     /// database, outside the publish folder so republishing cannot erase it.

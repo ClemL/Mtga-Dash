@@ -72,7 +72,7 @@ public sealed record AccountDetail(
 
 /// <summary>A card known to be owned (from saved decks), with what the card database says about it.</summary>
 public sealed record OwnedCard(int CardId, int Copies, int Decks, IReadOnlyList<string> DeckNames, string? Name, string? Rarity, string? Set,
-    string? Types = null, string? Cost = null, string? Colors = null, bool Alchemy = false);
+    string? Types = null, string? Cost = null, string? Colors = null, bool Alchemy = false, string? Image = null);
 
 public sealed record CardHolder(string? Email, string DisplayName, int Copies);
 
@@ -136,7 +136,8 @@ public sealed record InventoryDrop(
     long GemsChange, long GoldChange, long RareChange, long MythicChange, IReadOnlyList<string> Reasons);
 
 /// <summary>Read side of the API. Every query is plain SQL against the schema in <see cref="Database"/>.</summary>
-public sealed partial class Queries(Database db, Cards.CardNames? cards = null, ExceptionStore? exceptions = null, MtgaDashOptions? options = null)
+public sealed partial class Queries(Database db, Cards.CardNames? cards = null, ExceptionStore? exceptions = null, MtgaDashOptions? options = null,
+    CardImageStore? images = null)
 {
     public IReadOnlyList<AccountLatest> Accounts(string? search = null, string? status = null, bool? stale = null, int staleDays = 30, DateTime? nowUtc = null)
     {
@@ -186,7 +187,14 @@ public sealed partial class Queries(Database db, Cards.CardNames? cards = null, 
         var saved = name is null ? [] : SavedDecks(c, name).ToList();
         var (canonical, info) = Canonical(saved);
         var known = KnownCollection.For(saved, canonical);
-        var owned = known.Select(k => ToOwned(k, info)).ToList();
+        var owned = known.Select(k =>
+        {
+            var o = ToOwned(k, info);
+            // Only a card with a downloaded image gets a URL; the page draws a placeholder for the rest.
+            return o.Name is { } n && images?.Has(n) == true
+                ? o with { Image = "/card-images/" + Uri.EscapeDataString(CardImageStore.KeyFor(n)) + ".jpg" }
+                : o;
+        }).ToList();
         return new AccountDetail(a, snaps, boosters, custom, decks.Count - custom.Count, ranks, names, owned, cards?.HasRarity ?? false);
     }
 
@@ -248,6 +256,14 @@ public sealed partial class Queries(Database db, Cards.CardNames? cards = null, 
         int Map(int id) => info.TryGetValue(id, out var i) && i.Name is { } n ? byName[n] : id;
         return (Map, info);
     }
+
+    /// <summary>
+    /// The cards worth an image: rares and mythics some account holds at 3 or more copies, by name. Cards the
+    /// card database cannot name are left out, since an image is found by name.
+    /// </summary>
+    public IReadOnlyList<string> ImageWanted() =>
+        Cards(minCopies: 3).Cards.Where(c => c.Name is not null && (c.Rarity is "rare" or "mythic"))
+            .Select(c => c.Name!).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToList();
 
     /// <summary>Every account holding at least one copy of a card (any printing), most copies first.</summary>
     public IReadOnlyList<CardHolder> CardHolders(int cardId)

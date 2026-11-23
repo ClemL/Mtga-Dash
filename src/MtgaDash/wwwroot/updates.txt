@@ -31,3 +31,5 @@
 2026-11-19T21:42:00Z - Starter deck names (Aerial Domination, Forest's Might, Imported Deck, Keep the Peace and any you hide) are treated like precons
 2026-11-19T21:42:00Z - Totals tab lists the accounts with the most boosters and the most rare wildcards
 2026-11-21T08:25:00Z - Account pages and the Accounts table no longer show rank, common and uncommon wildcards or the gems and gold chart
+2026-11-23T22:01:00Z - Account pages show the rares and mythics held at 3+ copies as card images, with placeholders where there is no image yet; the wildcard chart and booster list are gone
+2026-11-23T22:01:00Z - Card images are downloaded from Scryfall with one button, or by running MtgaDash.exe --download-card-images

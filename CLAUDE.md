@@ -133,7 +133,8 @@ the fix. Tests replace `GameLauncher.Start` and `StartPage.Open`, and `ApiTests`
 never launch a real process or browser from a test (CI has a desktop).
 
 **Card images come from Scryfall, which has rules.** Every API call carries the `MtgaDash/<version>`
-User-Agent and an Accept header (`CardImageStore.CreateClient`) and waits `RequestGap` (100 ms). Tests use
+User-Agent and an Accept header (`CardImageStore.CreateClient`), waits `SearchGap` (600 ms) before a search
+and `RequestGap` (100 ms) before an image, and stops the run and pauses after a second 429. Tests use
 `FakeScryfall`: never call the real API from a test. `Program.cs` also runs as a command-line tool with
 `--download-card-images`.
 

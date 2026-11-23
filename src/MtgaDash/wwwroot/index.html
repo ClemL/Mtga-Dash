@@ -1172,7 +1172,7 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
     return h("details", { class: "card last-run", open: total > 0 && total <= 60 },
       h("summary", null, "Last image download: ", h("strong", { text: P.relativeTime(run.finishedUtc, now) || run.finishedUtc }),
         h("span", { class: "muted", text: " · " + how + " · " + fmt(run.saved.length) + " saved, " + fmt(run.notFound.length) + " with no image yet, "
-          + fmt(run.failed.length) + " failed" + (run.completed ? "" : " · stopped before the end") })),
+          + fmt(run.failed.length) + " failed" + (run.completed ? "" : run.pausedUntilUtc ? " · stopped: Scryfall asked to slow down" : " · stopped before the end") })),
       total ? null : h("p", { class: "muted", text: "Nothing was missing." }),
       names("Saved", run.saved), names("No image on Scryfall yet", run.notFound), names("Failed, tried again next time", run.failed));
   }
@@ -1190,7 +1190,8 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
     if (ims) view.appendChild(h("div", { class: "toolbar" },
       h("span", null, "Card images: ", h("strong", { text: fmt(ims.have) + " of " + fmt(ims.wanted) }),
         h("span", { class: "muted", text: " rares and mythics at 3+ copies · " + fmt(ims.missing) + " to download · " + fmt(ims.notFound) + " with no image yet · " + ims.folder })),
-      ims.missing && !ims.running ? h("button", { type: "button", onclick: startImageDownload, text: "Download missing images" }) : null,
+      ims.missing && !ims.running && !ims.pausedUntilUtc ? h("button", { type: "button", onclick: startImageDownload, text: "Download missing images" }) : null,
+      ims.pausedUntilUtc ? h("span", { class: "cannot-start", text: imagePauseText(ims) }) : null,
       ims.running ? h("span", { class: "muted", text: "Downloading " + ims.done + " of " + ims.toDo + "…" }) : null));
     if (ims) view.appendChild(renderLastImageRun(ims.lastRun, now));
     view.appendChild(h("div", { class: "toolbar" },
@@ -1613,8 +1614,9 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
     var missing = !READ_ONLY && st ? st.missing : 0;
     section.appendChild(h("div", { class: "toolbar" },
       h("span", { class: "muted", text: fmt(cards.length) + " cards: " + fmt(four) + " with 4+, " + fmt(cards.length - four) + " with 3" }),
-      missing && !st.running ? h("button", { type: "button", onclick: startImageDownload, title: "Fetch the newest art from Scryfall for every rare and mythic held at 3+ copies on any account", text: "Download missing images (" + missing + ")" }) : null,
-      st && (st.running || st.lastMessage) ? h("span", { class: "muted", "aria-live": "polite", text: st.running ? "Downloading " + st.done + " of " + st.toDo + "… " + (st.lastMessage || "") : st.lastMessage }) : null));
+      missing && !st.running && !st.pausedUntilUtc ? h("button", { type: "button", onclick: startImageDownload, title: "Fetch the newest art from Scryfall for every rare and mythic held at 3+ copies on any account", text: "Download missing images (" + missing + ")" }) : null,
+      st && st.pausedUntilUtc ? h("span", { class: "muted", text: imagePauseText(st) }) : null,
+      st && !st.pausedUntilUtc && (st.running || st.lastMessage) ? h("span", { class: "muted", "aria-live": "polite", text: st.running ? "Downloading " + st.done + " of " + st.toDo + "… " + (st.lastMessage || "") : st.lastMessage }) : null));
     if (!d.cardRarityKnown) section.appendChild(cardDbNotice(false, null));
     section.appendChild(h("div", { class: "gallery" }, cards.map(function (k) {
       return h("figure", { class: "gallery-item" },
@@ -1624,6 +1626,11 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
         h("figcaption", { text: cardLabel(k) }));
     })));
     return section;
+  }
+
+  // Scryfall answered "too many requests" twice; going on could get this address banned, so nothing starts for a while.
+  function imagePauseText(st) {
+    return "Scryfall asked to slow down: downloads paused until " + new Date(st.pausedUntilUtc).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   }
 
   function loadImageStatus() {
@@ -2047,7 +2054,7 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
     CFG.themes.forEach(function (t) { cmds.push({ id: "theme-" + t.id, group: "Settings", label: "Theme: " + t.label + (display.theme === t.id ? " (in use)" : ""), disabled: display.theme === t.id, run: function () { chooseTheme(t.id); } }); });
     CFG.densities.forEach(function (d) { cmds.push({ id: "density-" + d.id, group: "Settings", label: "Density: " + d.label + (display.density === d.id ? " (in use)" : ""), disabled: display.density === d.id, run: function () { chooseDensity(d.id); } }); });
     CFG.textSizes.forEach(function (t) { cmds.push({ id: "text-" + t.id, group: "Settings", label: "Text size: " + t.label + (display.text === t.id ? " (in use)" : ""), disabled: display.text === t.id, run: function () { chooseText(t.id); } }); });
-    cmds.push({ id: "cardimages-download", group: "Cards", label: "Download missing card images", disabled: READ_ONLY || (state.imageStatus && state.imageStatus.running), run: startImageDownload });
+    cmds.push({ id: "cardimages-download", group: "Cards", label: "Download missing card images", disabled: READ_ONLY || (state.imageStatus && (state.imageStatus.running || !!state.imageStatus.pausedUntilUtc)), run: startImageDownload });
     cmds.push({ id: "carddb-setup", group: "Cards", label: "Set up card names (CardDbPath)", disabled: READ_ONLY, run: openCardDbSetup });
     cmds.push({ id: "game-launch", group: "Game", label: state.game && state.game.running ? "Start MTGA (already running)" : "Start MTGA",
       disabled: READ_ONLY || !state.game || state.game.running || !state.game.canLaunch, run: launchGame });

@@ -28,7 +28,25 @@ public sealed class CardImageTests
     private static (CardImageStore Store, FakeScryfall Fake) Make(TempDb t)
     {
         var fake = new FakeScryfall();
-        return (new CardImageStore(t.File("card-images"), "https://scryfall.test", CardImageStore.CreateClient(fake), NullLogger.Instance), fake);
+        return (Store(t.File("card-images"), fake), fake);
+    }
+
+    /// <summary>Scryfall's real pacing would make every test wait seconds; the waits themselves are not under test.</summary>
+    internal static CardImageStore Store(string folder, FakeScryfall fake) =>
+        new(folder, "https://scryfall.test", CardImageStore.CreateClient(fake), NullLogger.Instance)
+        {
+            SearchGap = TimeSpan.FromMilliseconds(1),
+            RequestGap = TimeSpan.FromMilliseconds(1),
+            TooManyRequestsWait = TimeSpan.FromMilliseconds(10),
+        };
+
+    [TestMethod]
+    public void Searches_are_paced_slower_than_image_downloads()
+    {
+        using var t = new TempDb();
+        var store = new CardImageStore(t.File("card-images"), "https://scryfall.test", CardImageStore.CreateClient(new FakeScryfall()), NullLogger.Instance);
+        Assert.IsTrue(store.SearchGap >= TimeSpan.FromMilliseconds(500), "Scryfall's search endpoint allows about 2 a second");
+        Assert.IsTrue(store.TooManyRequestsWait >= TimeSpan.FromSeconds(10));
     }
 
     private const string Search = """{"object":"list","data":[{"name":"Elf Lord","released_at":"2026-10-01","image_uris":{"normal":"https://img.test/new.jpg"}},{"name":"Elf Lord","released_at":"2019-01-01","image_uris":{"normal":"https://img.test/old.jpg"}}]}""";
@@ -127,6 +145,48 @@ public sealed class CardImageTests
     }
 
     [TestMethod]
+    public async Task A_second_too_many_requests_stops_the_run_and_pauses_downloads()
+    {
+        using var t = new TempDb();
+        var (store, fake) = Make(t);
+        fake.Answer = _ => new HttpResponseMessage(HttpStatusCode.TooManyRequests);
+
+        var report = await store.DownloadMissingAsync(["Card A", "Card B", "Card C"], null, CancellationToken.None, CardImageStore.Automatic);
+
+        Assert.AreEqual(2, fake.Requests.Count, "one retry, then nothing more: the other cards are not asked for");
+        Assert.AreEqual(new CardImageStore.Report(0, 0, 1), report);
+        var run = store.LastRun()!;
+        Assert.IsFalse(run.Completed);
+        Assert.IsNotNull(run.PausedUntilUtc);
+        StringAssert.Contains(store.Status(["Card A"]).LastMessage, "Stopped with 2 cards left");
+        Assert.IsNotNull(store.Status(["Card A"]).PausedUntilUtc);
+        Assert.AreEqual(3, store.Missing(["Card A", "Card B", "Card C"]).Count, "all still missing, none marked as having no image");
+
+        Assert.IsFalse(store.StartDownload(["Card A"]), "no run starts while paused");
+        Assert.IsNotNull(Make(t).Store.PausedUntil, "a restart, or the command-line tool, sees the pause too");
+        Assert.IsTrue(store.PausedUntil <= DateTime.UtcNow + CardImageStore.PauseAfterLimit);
+    }
+
+    [TestMethod]
+    public async Task Retry_after_is_honored()
+    {
+        using var t = new TempDb();
+        var (store, fake) = Make(t);
+        var first = true;
+        fake.Answer = r =>
+        {
+            if (!first) return r.RequestUri!.Host == "scryfall.test" ? FakeScryfall.Json(Search) : FakeScryfall.Jpeg("x");
+            first = false;
+            var busy = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
+            busy.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(TimeSpan.FromSeconds(1));
+            return busy;
+        };
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        Assert.AreEqual(1, (await store.DownloadMissingAsync(["Elf Lord"], null, CancellationToken.None)).Downloaded);
+        Assert.IsTrue(clock.Elapsed >= TimeSpan.FromMilliseconds(950), clock.Elapsed.ToString());
+    }
+
+    [TestMethod]
     public async Task The_last_run_records_what_it_fetched_and_survives_a_restart()
     {
         using var t = new TempDb();
@@ -199,7 +259,7 @@ public sealed class CardImageAutoTests
                 ? FakeScryfall.Json("""{"data":[{"image_uris":{"normal":"https://img.test/a.jpg"}}]}""")
                 : FakeScryfall.Jpeg("x"),
         };
-        var store = new CardImageStore(t.File("card-images"), "https://scryfall.test", CardImageStore.CreateClient(fake), NullLogger.Instance);
+        var store = CardImageTests.Store(t.File("card-images"), fake);
         var q = new MtgaDash.Data.Queries(t.Db, new CardNames(db, NullLogger.Instance), images: store);
         return (t, q, store, fake);
     }

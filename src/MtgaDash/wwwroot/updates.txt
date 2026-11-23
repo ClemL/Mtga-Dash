@@ -39,3 +39,4 @@
 2026-11-23T22:08:00Z - Missing card images download by themselves two minutes after a play session, and once after the dashboard starts
 2026-11-23T22:21:00Z - The Status tab shows the last card image download: when, what started it, and the cards it saved, could not find or failed on
 2026-11-23T22:21:00Z - Card thumbnails also appear in the Cards tab's By account view and in each account's Known rares table
+2026-11-23T23:13:00Z - Card image downloads search Scryfall more slowly, honor its Retry-After, and pause for 30 minutes instead of continuing when it says too many requests

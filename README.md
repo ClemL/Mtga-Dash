@@ -7,8 +7,9 @@ single-page dashboard on `http://localhost:5080` that updates live.
 - **Accounts**: every account from the CSV, with gems, gold, wildcards, boosters, custom decks and a
   color-coded last login. Search, filter by status, sort by any column, click for the detail.
 - **Stale**: accounts never logged in or not logged in for N days, oldest first, with one-click email copy.
-- **Totals**: gems, gold and wildcards across all accounts, boosters by set, last-login buckets, and the 20
-  accounts with the most boosters and with the most rare wildcards.
+- **Totals**: gems, gold and wildcards across all accounts, last-login buckets, and the 20 accounts with the
+  most boosters, rare wildcards, draft tokens and event tokens (token boards appear once any account has
+  that kind).
 - **Account detail**: gems, gold, rare and mythic wildcards, vault and boosters; the account's rares and
   mythics at 3+ copies as card images (placeholders where there is no image yet); its known rares and mythics;
   and its custom decks with card lists (precons collapsed).
@@ -315,6 +316,13 @@ Alchemy: rebalanced `A-` cards and the digital-only Y sets).
 Names, rarity, cost, color and type come from MTGA's card database: set `CardDbPath` (above). Without it,
 cards are listed by id, every rarity is included and the type filters cannot apply.
 
+### Draft and event tokens
+
+Each login's inventory lists the account's tokens (MTGA's `CustomTokens`). A token whose name contains
+"draft" counts as a draft token and one containing "event" as an event token; they show as tiles on the
+account's page and as leaderboards on Totals. Any other token is listed by name under the tiles and on
+Totals, so if MTGA names a draft or event token differently it is still visible.
+
 ### Card images
 
 Each account's page shows its rares and mythics held at 3 or more copies as card images, 4-ofs first. The
@@ -342,8 +350,9 @@ tool. The static export shows placeholders: images are not embedded.
 
 ### Starter deck names
 
-Decks every account has (Aerial Domination, Forest's Might, Imported Deck, Keep the Peace, …) are treated like
-precons: not counted as custom decks, not listed as decks to record, folded into the precon count. **Deck
+Decks every account has are treated like precons. Hidden from the start: Aerial Domination, Cold-Blooded
+Killers, Destructive Firepower, Forest's Might, Goblins Everywhere!, Imported Deck, Keep the Peace, Large and
+in Charge and Out for Blood. They are: not counted as custom decks, not listed as decks to record, folded into the precon count. **Deck
 names** at the bottom of the Cards tab lists the custom deck names found on the most accounts with a **Hide**
 button, and the hidden ones with **Show**; each deck on an account's page also has **Hide this name**.
 

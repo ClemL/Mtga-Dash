@@ -1004,6 +1004,14 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
       body)));
   }
 
+  // A tile only when the account has tokens of that kind, with each kind's own names underneath.
+  function tokenTile(tokens, kind, label) {
+    var list = (tokens || []).filter(function (x) { return x.kind === kind; });
+    if (!list.length) return null;
+    var total = list.reduce(function (n, x) { return n + x.count; }, 0);
+    return tile(label, fmt(total), list.length > 1 || list[0].label.toLowerCase() !== kind ? list.map(function (x) { return x.label + " ×" + x.count; }).join(", ") : null);
+  }
+
   function tile(label, value, sub) {
     return h("div", { class: "tile" }, h("div", { class: "label", text: label }), h("div", { class: "value", text: value }), sub ? h("div", { class: "sub", text: sub }) : null);
   }
@@ -1017,24 +1025,37 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
       tile("Rare wildcards", fmt(t.wcRare)),
       tile("Mythic wildcards", fmt(t.wcMythic)),
       tile("Display names seen", fmt(t.players), fmt(t.accounts) + " accounts in the CSV")));
-    var sets = h("tbody");
-    t.boostersBySet.forEach(function (b) {
-      sets.appendChild(h("tr", null, h("td", { text: b.setCode }), h("td", { class: "num", text: fmt(b.count) }), h("td", { class: "num", text: fmt(b.accounts) })));
-    });
     var buckets = h("tbody");
     Object.keys(t.loginBuckets).forEach(function (k) {
       buckets.appendChild(h("tr", null, h("td", { text: k === "never" ? "Never" : k === "older" ? "Older than 90 days" : "Within " + k.slice(1) }), h("td", { class: "num", text: fmt(t.loginBuckets[k]) })));
     });
     view.appendChild(h("div", { class: "grid-2" },
-      h("section", { class: "card" }, h("h3", { text: "Boosters by set" }),
-        t.boostersBySet.length
-          ? h("div", { class: "table-wrap" }, h("table", null, h("thead", null, h("tr", null, h("th", { text: "Set" }), h("th", { class: "num", text: "Boosters" }), h("th", { class: "num", text: "Accounts" }))), sets))
-          : h("p", { class: "muted", text: "No boosters recorded." })),
-      h("section", { class: "card" }, h("h3", { text: "Last login" }),
-        h("div", { class: "table-wrap" }, h("table", null, h("thead", null, h("tr", null, h("th", { text: "When" }), h("th", { class: "num", text: "Accounts" }))), buckets)))));
-    view.appendChild(h("div", { class: "grid-2" },
       leaderTable("Most boosters", t.mostBoosters || [], "boosters"),
       leaderTable("Most rare wildcards", t.mostRareWildcards || [], "rares")));
+    // Token boards appear only for kinds some account has; otherwise the token names found are listed, so a
+    // draft or event token MTGA names differently can be spotted.
+    var draft = t.mostDraftTokens || [], event = t.mostEventTokens || [];
+    if (draft.length || event.length) view.appendChild(h("div", { class: "grid-2" },
+      draft.length ? tokenLeaderTable("Most draft tokens", draft) : null,
+      event.length ? tokenLeaderTable("Most event tokens", event) : null));
+    var others = (t.tokenTotals || []).filter(function (x) { return x.kind === "other"; });
+    if (others.length) view.appendChild(h("section", { class: "card" }, h("h3", { text: "Other tokens across accounts" }),
+      h("p", { class: "muted", text: others.map(function (x) { return x.label + " ×" + fmt(x.count); }).join(" · ") })));
+    view.appendChild(h("section", { class: "card" }, h("h3", { text: "Last login" }),
+      h("div", { class: "table-wrap" }, h("table", null, h("thead", null, h("tr", null, h("th", { text: "When" }), h("th", { class: "num", text: "Accounts" }))), buckets))));
+  }
+
+  function tokenLeaderTable(title, rows) {
+    return h("section", { class: "card" }, h("h3", { text: title }),
+      h("div", { class: "table-wrap" }, h("table", null,
+        h("thead", null, h("tr", null, ["#", "Account", "Tokens", "Last login"].map(function (x, i) { return h("th", { class: i === 0 || i === 2 ? "num" : null, text: x }); }))),
+        h("tbody", null, rows.map(function (a, i) {
+          return h("tr", { class: "clickable", tabindex: "0", onclick: function () { go("account", a.email); }, onkeydown: function (e) { if (e.key === "Enter") go("account", a.email); } },
+            h("td", { class: "num", text: String(i + 1) }),
+            h("td", null, h("span", { text: a.displayName || "—" }), h("br"), h("span", { class: "mono muted", text: a.email })),
+            h("td", { class: "num strong", text: fmt(a.count) }),
+            h("td", { text: P.relativeTime(a.lastLoginUtc, Date.now()) || "never" }));
+        })))));
   }
 
   // Top accounts by one measure, with the other alongside, each a link to the account.
@@ -1639,7 +1660,11 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
       tile("Gems", fmt(a.gems)), tile("Gold", fmt(a.gold)),
       tile("Wildcards R / M", fmt(a.wcRare) + " / " + fmt(a.wcMythic)),
       tile("Vault", a.vaultProgress == null ? "—" : a.vaultProgress.toFixed(1) + "%"),
-      tile("Boosters", a.snapshotId == null ? "—" : fmt(a.boosterTotal))));
+      tile("Boosters", a.snapshotId == null ? "—" : fmt(a.boosterTotal)),
+      tokenTile(d.tokens, "draft", "Draft tokens"),
+      tokenTile(d.tokens, "event", "Event tokens")));
+    var otherTokens = (d.tokens || []).filter(function (x) { return x.kind === "other"; });
+    if (otherTokens.length) view.appendChild(h("p", { class: "muted", text: "Other tokens: " + otherTokens.map(function (x) { return x.label + " ×" + fmt(x.count); }).join(" · ") }));
 
     // Rank, wildcard history, gems and gold over time and the booster list are still recorded, just not shown:
     // on this page the owner wants the cards themselves.

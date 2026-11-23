@@ -62,7 +62,7 @@ public sealed class EmptyDatabaseTests
         Assert.AreEqual(0, q.Cards().Cards.Count);
         Assert.IsNull(q.Account("nobody@example.com"));
         Assert.AreEqual(0, q.CardHolders(1).Count);
-        Assert.AreEqual(4, q.DeckNameLists().Hidden.Count, "the four starter names are hidden from the start");
+        Assert.AreEqual(9, q.DeckNameLists().Hidden.Count, "the nine starter names are hidden from the start");
 
         // An account with no decks: the deck query returns nothing, and must still map.
         using (var c = t.Db.Open())

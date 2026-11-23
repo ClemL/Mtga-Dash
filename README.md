@@ -352,7 +352,7 @@ tool. The static export shows placeholders: images are not embedded.
 
 Decks every account has are treated like precons. Hidden from the start: Aerial Domination, Cold-Blooded
 Killers, Destructive Firepower, Forest's Might, Goblins Everywhere!, Imported Deck, Keep the Peace, Large and
-in Charge and Out for Blood. They are: not counted as custom decks, not listed as decks to record, folded into the precon count. **Deck
+in Charge and Out for Blood. Hidden decks are not counted as custom decks, not listed as decks to record, and are folded into the precon count. **Deck
 names** at the bottom of the Cards tab lists the custom deck names found on the most accounts with a **Hide**
 button, and the hidden ones with **Show**; each deck on an account's page also has **Hide this name**.
 

@@ -333,8 +333,13 @@ mythics some account holds at 3+ copies are fetched; card names need `CardDbPath
 **Automatically:** 2 minutes after new log data stops arriving (in practice, just after a play session) and
 once after the dashboard starts, missing images are downloaded in the background. Settings:
 `AutoDownloadCardImages` (default `true`) and `AutoDownloadDelaySeconds` (default `120`). It only asks for
-what is missing, so a quiet period with nothing new makes no requests. The By card view on the Cards tab
-shows a thumbnail per card; click it, or the name, for the full image and every account holding the card.
+what is missing, so a quiet period with nothing new makes no requests. Thumbnails appear in the Cards tab's
+By card and By account views and in each account's Known rares table; click one, or the name, for the full
+image and every account holding the card.
+
+The Status tab shows the last download, whatever started it (automatic, the button or the command line): when
+it finished, and the names it saved, found no image for and failed on. It is kept in `card-images\last-run.json`,
+so it survives a restart and includes command-line runs.
 
 Two ways to fetch them by hand:
 

@@ -36,7 +36,7 @@ public sealed class CardImageAutoDownload : IHostedService, IDisposable
             var wanted = _queries.ImageWanted().ToList();
             var missing = _images.Missing(wanted).Count;
             if (missing == 0) return false;
-            var started = _images.StartDownload(wanted);
+            var started = _images.StartDownload(wanted, CardImageStore.Automatic);
             if (started) _logger.LogInformation("Downloading {Count} missing card images in the background", missing);
             return started;
         }

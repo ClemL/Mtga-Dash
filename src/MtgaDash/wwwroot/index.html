@@ -325,6 +325,12 @@ details > summary { cursor: pointer; padding: var(--cell-py) 0; }
 .thumb:focus-visible { outline: 2px solid var(--accent); }
 .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .thumb-ph { display: grid; place-items: center; width: 100%; height: 100%; box-sizing: border-box; border: 1px dashed var(--border-strong); background: var(--panel-2); color: var(--fg-dim); font-size: calc(11px * var(--text-scale)); }
+.thumb-chips { line-height: 1.2; }
+/* A small image next to each card name in the By account view; the chips wrap inside the cell. */
+.thumb-chip { display: inline-flex; align-items: center; gap: var(--gap); margin: 2px calc(var(--gap) * 1.5) 2px 0; vertical-align: middle; }
+.thumb-chip .thumb { width: 28px; }
+.last-run summary { cursor: pointer; }
+.last-run p { margin: var(--gap) 0 0; overflow-wrap: anywhere; }
 .dialog-card { display: block; width: min(244px, 60%); margin: 0 auto var(--block); border-radius: 4.75% / 3.5%; }
 .copies-badge.four { background: var(--accent); color: var(--panel); border-color: var(--accent); }
 
@@ -1152,6 +1158,25 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
     return n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : n >= 1024 ? Math.round(n / 1024) + " KB" : n + " B";
   }
 
+  // The latest image download, whichever started it, with the names it saved, could not find and failed on.
+  function renderLastImageRun(run, now) {
+    if (!run) return h("p", { class: "muted", text: "Last image download: none yet." });
+    var how = run.trigger === "automatic" ? "automatic, after new log data" : run.trigger === "button" ? "from the Download button" : "from the command line";
+    function names(label, list) {
+      if (!list.length) return null;
+      var shown = list.slice(0, 60);
+      return h("p", null, h("strong", { text: label + " (" + fmt(list.length) + "): " }),
+        h("span", { text: shown.join(", ") + (list.length > shown.length ? ", and " + fmt(list.length - shown.length) + " more" : "") }));
+    }
+    var total = run.saved.length + run.notFound.length + run.failed.length;
+    return h("details", { class: "card last-run", open: total > 0 && total <= 60 },
+      h("summary", null, "Last image download: ", h("strong", { text: P.relativeTime(run.finishedUtc, now) || run.finishedUtc }),
+        h("span", { class: "muted", text: " · " + how + " · " + fmt(run.saved.length) + " saved, " + fmt(run.notFound.length) + " with no image yet, "
+          + fmt(run.failed.length) + " failed" + (run.completed ? "" : " · stopped before the end") })),
+      total ? null : h("p", { class: "muted", text: "Nothing was missing." }),
+      names("Saved", run.saved), names("No image on Scryfall yet", run.notFound), names("Failed, tried again next time", run.failed));
+  }
+
   function renderStatus(view) {
     var s = state.ingest;
     if (!s) { view.appendChild(h("p", { class: "muted", text: "No status yet." })); return; }
@@ -1167,6 +1192,7 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
         h("span", { class: "muted", text: " rares and mythics at 3+ copies · " + fmt(ims.missing) + " to download · " + fmt(ims.notFound) + " with no image yet · " + ims.folder })),
       ims.missing && !ims.running ? h("button", { type: "button", onclick: startImageDownload, text: "Download missing images" }) : null,
       ims.running ? h("span", { class: "muted", text: "Downloading " + ims.done + " of " + ims.toDo + "…" }) : null));
+    if (ims) view.appendChild(renderLastImageRun(ims.lastRun, now));
     view.appendChild(h("div", { class: "toolbar" },
       h("span", null, "Card names: ", h("strong", { text: state.cards && state.cards.rarityKnown ? "on" : "off" })),
       h("button", { type: "button", onclick: openCardDbSetup, text: state.cards && state.cards.rarityKnown ? "Check" : "Set up card names" })));
@@ -1494,8 +1520,9 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
         return h("tr", null,
           h("td", null, a.email ? h("a", { href: "#/account/" + encodeURIComponent(a.email), text: a.displayName }) : h("span", { title: "Not matched to an account", text: a.displayName })),
           h("td", { class: "num", text: fmt(a.cards.length) }),
-          h("td", { class: "notes" }, a.cards.map(function (e, i) {
-            return [i ? ", " : null, h("button", { type: "button", class: "link-btn", onclick: function () { openCardHolders(e.card); }, text: cardLabel(e.card) + " ×" + e.copies })];
+          h("td", { class: "notes thumb-chips" }, a.cards.map(function (e) {
+            return h("span", { class: "thumb-chip" }, cardThumb(e.card),
+              h("button", { type: "button", class: "link-btn", onclick: function () { openCardHolders(e.card); }, text: cardLabel(e.card) + " ×" + e.copies }));
           })));
       })))));
   }
@@ -1638,9 +1665,10 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
     var notice = cardDbNotice(d.cardRarityKnown, null);
     if (notice) section.appendChild(notice);
     section.appendChild(shown.length ? h("div", { class: "table-wrap" }, h("table", null,
-      h("thead", null, h("tr", null, ["Card", "Cost", "Color", "Type", "Rarity", "Copies (at least)", "Seen in"].map(function (t, i) { return h("th", { class: i === 5 ? "num" : null, text: t }); }))),
+      h("thead", null, h("tr", null, ["", "Card", "Cost", "Color", "Type", "Rarity", "Copies (at least)", "Seen in"].map(function (t, i) { return h("th", { class: i === 6 ? "num" : null, "aria-label": i === 0 ? "Image" : null, text: t }); }))),
       h("tbody", null, shown.map(function (k) {
         return h("tr", null,
+          h("td", { class: "thumb-cell" }, cardThumb(k)),
           h("td", null, h("button", { type: "button", class: "link-btn", title: "Every account with this card", onclick: function () { openCardHolders(k); }, text: cardLabel(k) }),
             k.alchemy ? h("span", { class: "pill", title: "Alchemy", text: "A" }) : null),
           h("td", { class: "mono", text: costText(k) }),

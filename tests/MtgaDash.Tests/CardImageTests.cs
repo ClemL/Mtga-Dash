@@ -125,6 +125,52 @@ public sealed class CardImageTests
         };
         Assert.AreEqual(1, (await store.DownloadMissingAsync(["Elf Lord"], null, CancellationToken.None)).Downloaded);
     }
+
+    [TestMethod]
+    public async Task The_last_run_records_what_it_fetched_and_survives_a_restart()
+    {
+        using var t = new TempDb();
+        var (store, fake) = Make(t);
+        Assert.IsNull(store.LastRun(), "no run yet");
+        fake.Answer = r => r.RequestUri!.Query.Contains("Elf") ? FakeScryfall.Json(Search)
+            : r.RequestUri.Query.Contains("Broken") ? new HttpResponseMessage(HttpStatusCode.InternalServerError)
+            : r.RequestUri.Host == "img.test" ? FakeScryfall.Jpeg("x")
+            : new HttpResponseMessage(HttpStatusCode.NotFound);
+
+        await store.DownloadMissingAsync(["Elf Lord", "Brand New Card", "Broken Card"], null, CancellationToken.None, CardImageStore.Button);
+
+        // A new store over the same folder stands in for a restart, or for the dashboard after a command-line run.
+        var run = Make(t).Store.LastRun()!;
+        Assert.AreEqual(CardImageStore.Button, run.Trigger);
+        Assert.IsTrue(run.Completed);
+        CollectionAssert.AreEqual(new[] { "Elf Lord" }, run.Saved);
+        CollectionAssert.AreEqual(new[] { "Brand New Card" }, run.NotFound);
+        CollectionAssert.AreEqual(new[] { "Broken Card" }, run.Failed);
+        Assert.IsTrue(string.CompareOrdinal(run.StartedUtc, run.FinishedUtc) <= 0);
+        CollectionAssert.AreEqual(run.Saved, store.Status(["Elf Lord"]).LastRun!.Saved, "the Status tab reads it");
+
+        await store.DownloadMissingAsync(["Elf Lord"], null, CancellationToken.None);
+        run = store.LastRun()!;
+        Assert.AreEqual(CardImageStore.CommandLine, run.Trigger, "the command line is the default caller");
+        Assert.AreEqual(0, run.Saved.Count + run.NotFound.Count + run.Failed.Count, "a run with nothing to do is recorded as such");
+    }
+
+    [TestMethod]
+    public async Task A_run_cut_off_still_records_what_it_saved()
+    {
+        using var t = new TempDb();
+        var (store, fake) = Make(t);
+        using var cancel = new CancellationTokenSource();
+        fake.Answer = r =>
+        {
+            if (r.RequestUri!.Host == "img.test") { cancel.Cancel(); return FakeScryfall.Jpeg("x"); }
+            return FakeScryfall.Json(Search);
+        };
+        await Assert.ThrowsExactlyAsync<OperationCanceledException>(() =>
+            store.DownloadMissingAsync(["Elf Lord", "Tide Caller"], null, cancel.Token));
+        var run = store.LastRun()!;
+        Assert.IsFalse(run.Completed);
+    }
 }
 
 [TestClass]
@@ -172,6 +218,8 @@ public sealed class CardImageAutoTests
             Assert.IsTrue(auto.RunOnce());
             for (var i = 0; i < 100 && store.Status(q.ImageWanted().ToList()).Running; i++) await Task.Delay(50);
             Assert.IsTrue(store.Has("Elf Lord") && store.Has("Tide Caller"));
+            Assert.AreEqual(CardImageStore.Automatic, store.LastRun()!.Trigger);
+            CollectionAssert.AreEqual(new[] { "Elf Lord", "Tide Caller" }, store.LastRun()!.Saved);
 
             fake.Requests.Clear();
             Assert.IsFalse(auto.RunOnce(), "nothing missing, nothing started");

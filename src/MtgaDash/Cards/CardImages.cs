@@ -5,7 +5,16 @@ using System.Text.Json;
 namespace MtgaDash.Cards;
 
 public sealed record CardImageStatus(
-    string Folder, int Wanted, int Have, int Missing, int NotFound, bool Running, int Done, int ToDo, string? LastMessage);
+    string Folder, int Wanted, int Have, int Missing, int NotFound, bool Running, int Done, int ToDo, string? LastMessage,
+    CardImageRun? LastRun);
+
+/// <summary>
+/// The latest finished download, whatever started it: <see cref="CardImageStore.Automatic"/>,
+/// <see cref="CardImageStore.Button"/> or <see cref="CardImageStore.CommandLine"/>. Kept in the image folder
+/// so a command-line run and a restart still show on the Status tab.
+/// </summary>
+public sealed record CardImageRun(
+    string Trigger, string StartedUtc, string FinishedUtc, bool Completed, List<string> Saved, List<string> NotFound, List<string> Failed);
 
 /// <summary>
 /// A local folder of card images, one JPEG per card name, and the downloader that fills it from Scryfall.
@@ -19,6 +28,8 @@ public sealed class CardImageStore
     internal static readonly TimeSpan RequestGap = TimeSpan.FromMilliseconds(100);
     internal static readonly TimeSpan RetryNotFoundAfter = TimeSpan.FromDays(7);
     private const string NotFoundFile = "not-found.json";
+    private const string LastRunFile = "last-run.json";
+    public const string Automatic = "automatic", Button = "button", CommandLine = "command line";
 
     private readonly HttpClient _http;
     private readonly string _api;
@@ -105,6 +116,33 @@ public sealed class CardImageStore
             .ToList();
     }
 
+    public CardImageRun? LastRun()
+    {
+        try
+        {
+            var path = Path.Combine(Folder, LastRunFile);
+            return File.Exists(path) ? JsonSerializer.Deserialize<CardImageRun>(File.ReadAllText(path)) : null;
+        }
+        catch (Exception ex) when (ex is JsonException or IOException)
+        {
+            return null;
+        }
+    }
+
+    private void WriteLastRun(CardImageRun run)
+    {
+        try
+        {
+            Directory.CreateDirectory(Folder);
+            File.WriteAllText(Path.Combine(Folder, LastRunFile), JsonSerializer.Serialize(run, new JsonSerializerOptions { WriteIndented = true }));
+        }
+        catch (IOException ex)
+        {
+            // The record is only for the Status tab; failing to write it must not fail the download.
+            _logger.LogWarning("Could not record the card image run: {Message}", ex.Message);
+        }
+    }
+
     public CardImageStatus Status(IReadOnlyCollection<string> wanted)
     {
         var notFound = ReadNotFound();
@@ -112,16 +150,17 @@ public sealed class CardImageStore
         var missing = Missing(wanted).Count;
         lock (_gate)
             return new CardImageStatus(Folder, wanted.Count, have, missing,
-                wanted.Count(n => !Has(n) && notFound.ContainsKey(n)), _running is { IsCompleted: false }, _done, _toDo, _lastMessage);
+                wanted.Count(n => !Has(n) && notFound.ContainsKey(n)), _running is { IsCompleted: false }, _done, _toDo, _lastMessage,
+                LastRun());
     }
 
     /// <summary>Starts a download in the background unless one is running. Returns false if one was.</summary>
-    public bool StartDownload(IReadOnlyCollection<string> wanted)
+    public bool StartDownload(IReadOnlyCollection<string> wanted, string trigger = Button)
     {
         lock (_gate)
         {
             if (_running is { IsCompleted: false }) return false;
-            _running = Task.Run(() => DownloadMissingAsync(wanted, null, CancellationToken.None));
+            _running = Task.Run(() => DownloadMissingAsync(wanted, null, CancellationToken.None, trigger));
             return true;
         }
     }
@@ -129,11 +168,29 @@ public sealed class CardImageStore
     public sealed record Report(int Downloaded, int NotFound, int Failed);
 
     /// <summary>Downloads the newest art of every missing card, one at a time, at Scryfall's requested pace.</summary>
-    public async Task<Report> DownloadMissingAsync(IEnumerable<string> wanted, Action<string>? progress, CancellationToken cancel)
+    public async Task<Report> DownloadMissingAsync(IEnumerable<string> wanted, Action<string>? progress, CancellationToken cancel, string trigger = CommandLine)
     {
+        var started = DateTime.UtcNow;
         var missing = Missing(wanted);
         var notFound = ReadNotFound();
-        int downloaded = 0, absent = 0, failed = 0;
+        List<string> saved = [], absentNames = [], failedNames = [];
+        var completed = false;
+        try
+        {
+            await DownloadAsync(missing, notFound, saved, absentNames, failedNames, progress, cancel);
+            completed = true;
+        }
+        finally
+        {
+            // Written even when cut off, so the Status tab says what a stopped run did fetch.
+            WriteLastRun(new CardImageRun(trigger, Data.Time.Format(started), Data.Time.Format(DateTime.UtcNow), completed, saved, absentNames, failedNames));
+        }
+        return new Report(saved.Count, absentNames.Count, failedNames.Count);
+    }
+
+    private async Task DownloadAsync(List<string> missing, Dictionary<string, DateTime> notFound,
+        List<string> saved, List<string> absentNames, List<string> failedNames, Action<string>? progress, CancellationToken cancel)
+    {
         lock (_gate)
         {
             _done = 0;
@@ -157,7 +214,7 @@ public sealed class CardImageStore
                 {
                     notFound[name] = DateTime.UtcNow;
                     WriteNotFound(notFound);
-                    absent++;
+                    absentNames.Add(name);
                     Say($"{name}: no image on Scryfall yet; showing a placeholder");
                 }
                 else
@@ -169,21 +226,20 @@ public sealed class CardImageStore
                     await File.WriteAllBytesAsync(path + ".part", bytes, cancel);
                     File.Move(path + ".part", path, overwrite: true);
                     notFound.Remove(name);
-                    downloaded++;
+                    saved.Add(name);
                     Say($"{name}: saved");
                 }
             }
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException or IOException)
             {
-                failed++;
+                failedNames.Add(name);
                 Say($"{name}: failed ({ex.Message}); it will be tried again next time");
                 _logger.LogWarning("Card image for {Name} failed: {Message}", name, ex.Message);
             }
             lock (_gate) _done++;
         }
         if (notFound.Count > 0) WriteNotFound(notFound);
-        Say($"Done: {downloaded} saved, {absent} with no image yet, {failed} failed.");
-        return new Report(downloaded, absent, failed);
+        Say($"Done: {saved.Count} saved, {absentNames.Count} with no image yet, {failedNames.Count} failed.");
     }
 
     /// <summary>

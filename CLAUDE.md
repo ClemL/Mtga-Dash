@@ -46,7 +46,8 @@ src/MtgaDash/
                 ExceptionStore (Review-tab overrides in account-exceptions.json)
   Cards/        CardNames: optional names, rarity and set from MTGA's own SQLite card DB, schema found at
                 runtime; KnownCollection (pure): cards owned, as a minimum, from saved deck lists;
-                CardImageStore: newest-art images from Scryfall, by card name, in card-images/
+                CardImageStore: newest-art images from Scryfall, by card name, in card-images/ (with
+                not-found.json and last-run.json, the Status tab's record of the latest download)
   Game/         GameLauncher: starts MTGA at startup (LaunchGame) or from the Status tab, never twice
   Web/          PageRenderer (fills index.html placeholders), StaticExporter, DisplayOptions, BuildInfo,
                 StartPage (writes the address and opens the browser once listening)

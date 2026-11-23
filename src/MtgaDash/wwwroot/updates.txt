@@ -37,3 +37,5 @@
 2026-11-23T22:05:00Z - Nine starter deck names are hidden from the start, including Cold-Blooded Killers, Goblins Everywhere! and Out for Blood
 2026-11-23T22:08:00Z - The Cards tab's By card view shows a thumbnail of each card, and the card details show the full image
 2026-11-23T22:08:00Z - Missing card images download by themselves two minutes after a play session, and once after the dashboard starts
+2026-11-23T22:21:00Z - The Status tab shows the last card image download: when, what started it, and the cards it saved, could not find or failed on
+2026-11-23T22:21:00Z - Card thumbnails also appear in the Cards tab's By account view and in each account's Known rares table

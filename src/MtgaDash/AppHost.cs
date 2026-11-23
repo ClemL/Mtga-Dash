@@ -58,6 +58,8 @@ public static class AppHost
         builder.Services.AddSingleton<StartPage>();
         builder.Services.AddSingleton<StaticExporter>();
         builder.Services.AddSingleton<IngestionService>();
+        builder.Services.AddSingleton<CardImageAutoDownload>();
+        builder.Services.AddHostedService(sp => sp.GetRequiredService<CardImageAutoDownload>());
         builder.Services.AddSingleton<Game.GameLauncher>();
         builder.Services.AddHostedService(sp => sp.GetRequiredService<Game.GameLauncher>());
         builder.Services.AddHostedService(sp => sp.GetRequiredService<IngestionService>());

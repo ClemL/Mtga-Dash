@@ -31,6 +31,12 @@ public sealed class MtgaDashOptions
     /// <summary>Where card images are kept. Empty means <c>card-images</c> beside the database.</summary>
     public string CardImageFolder { get; set; } = "";
 
+    /// <summary>Download missing card images by itself, 2 minutes after new log data stops arriving.</summary>
+    public bool AutoDownloadCardImages { get; set; } = true;
+
+    /// <summary>How long log data must be quiet before the automatic download runs.</summary>
+    public int AutoDownloadDelaySeconds { get; set; } = 120;
+
     /// <summary>The Scryfall API the image downloader asks; changed only for testing.</summary>
     public string CardImageApi { get; set; } = "https://api.scryfall.com";
 

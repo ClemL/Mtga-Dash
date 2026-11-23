@@ -320,6 +320,12 @@ details > summary { cursor: pointer; padding: var(--cell-py) 0; }
   font-size: calc(12px * var(--text-scale)); overflow-wrap: anywhere; }
 .card-ph .small { font-size: calc(11px * var(--text-scale)); }
 .copies-badge { position: absolute; right: 6px; bottom: 6px; background: var(--panel); color: var(--fg); border: 1px solid var(--border-strong); border-radius: 9px; padding: 0 7px; font-size: calc(12px * var(--text-scale)); font-weight: 700; }
+.thumb-cell { width: 1%; padding-top: 3px; padding-bottom: 3px; }
+.thumb { all: unset; cursor: pointer; display: block; width: 40px; aspect-ratio: 488 / 680; border-radius: 3px; overflow: hidden; }
+.thumb:focus-visible { outline: 2px solid var(--accent); }
+.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.thumb-ph { display: grid; place-items: center; width: 100%; height: 100%; box-sizing: border-box; border: 1px dashed var(--border-strong); background: var(--panel-2); color: var(--fg-dim); font-size: calc(11px * var(--text-scale)); }
+.dialog-card { display: block; width: min(244px, 60%); margin: 0 auto var(--block); border-radius: 4.75% / 3.5%; }
 .copies-badge.four { background: var(--accent); color: var(--panel); border-color: var(--accent); }
 
 /* Footer: pushed to the foot of the page when the content is short. */
@@ -1449,9 +1455,10 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
     view.appendChild(h("p", { class: "muted", text: fmt(cards.length) + " cards held at " + c.minCopies + "+ copies by " + fmt(Object.keys(accounts).length) + " of " + fmt(c.accountsWithDecks) + " accounts with saved decks. Click a card to see every account that has it." }));
     if (!cards.length) { view.appendChild(h("p", { class: "muted", text: "No card matches." })); return; }
     view.appendChild(h("div", { class: "table-wrap" }, h("table", null,
-      h("thead", null, h("tr", null, ["Card", "Cost", "Color", "Type", "Rarity", "Accounts", "Held by (copies)"].map(function (t, i) { return h("th", { class: i === 5 ? "num" : null, text: t }); }))),
+      h("thead", null, h("tr", null, ["", "Card", "Cost", "Color", "Type", "Rarity", "Accounts", "Held by (copies)"].map(function (t, i) { return h("th", { class: i === 6 ? "num" : null, text: t, "aria-label": i === 0 ? "Image" : null }); }))),
       h("tbody", null, cards.slice(0, 500).map(function (x) {
         return h("tr", null,
+          h("td", { class: "thumb-cell" }, cardThumb(x)),
           h("td", null, h("button", { type: "button", class: "link-btn", title: "Every account with " + cardLabel(x), onclick: function () { openCardHolders(x); }, text: cardLabel(x) }),
             x.alchemy ? h("span", { class: "pill", title: "Alchemy (digital-only or rebalanced)", text: "A" }) : null),
           h("td", { class: "mono", text: costText(x) }),
@@ -1503,6 +1510,7 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
       // append() flattens the arrays below; replaceChildren would print an array as text.
       body.replaceChildren();
       append(body, [
+        card.image && !READ_ONLY ? h("img", { class: "dialog-card", src: card.image, alt: cardLabel(card) }) : null,
         h("p", { class: "muted" }, [card.cost, card.types, card.rarity].filter(Boolean).join(" · "), " ", colorPips(card.colors), card.alchemy ? " · Alchemy" : ""),
         READ_ONLY ? h("p", { class: "muted", text: "This snapshot only lists accounts at the Cards tab's minimum copies." }) : null,
         groups.length ? groups.map(function (g) {
@@ -1540,6 +1548,12 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
   }
 
   // ---------- Card gallery: the account's rares and mythics at 3+ copies, as images ----------
+
+  // A small image for table rows; the offline snapshot and cards without an image get an empty frame.
+  function cardThumb(k) {
+    return h("button", { type: "button", class: "thumb", title: cardLabel(k) + ": every account with it", onclick: function () { openCardHolders(k); } },
+      k.image && !READ_ONLY ? h("img", { src: k.image, alt: "", loading: "lazy" }) : h("span", { class: "thumb-ph", "aria-hidden": "true", text: "?" }));
+  }
 
   function cardPlaceholder(k) {
     return h("div", { class: "card-ph", role: "img", "aria-label": cardLabel(k) + " (no image yet)" },

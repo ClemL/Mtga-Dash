@@ -84,7 +84,7 @@ public sealed record OwnedCard(int CardId, int Copies, int Decks, IReadOnlyList<
 public sealed record CardHolder(string? Email, string DisplayName, int Copies);
 
 public sealed record CardAcrossAccounts(int CardId, string? Name, string? Rarity, string? Set, IReadOnlyList<CardHolder> Holders,
-    string? Types = null, string? Cost = null, string? Colors = null, bool Alchemy = false);
+    string? Types = null, string? Cost = null, string? Colors = null, bool Alchemy = false, string? Image = null);
 
 public sealed record CardsReport(
     bool RarityKnown, string? CardDbStatus, int MinCopies, IReadOnlyList<string> Rarities,
@@ -199,10 +199,7 @@ public sealed partial class Queries(Database db, Cards.CardNames? cards = null, 
         var owned = known.Select(k =>
         {
             var o = ToOwned(k, info);
-            // Only a card with a downloaded image gets a URL; the page draws a placeholder for the rest.
-            return o.Name is { } n && images?.Has(n) == true
-                ? o with { Image = "/card-images/" + Uri.EscapeDataString(CardImageStore.KeyFor(n)) + ".jpg" }
-                : o;
+            return o with { Image = ImageUrl(o.Name) };
         }).ToList();
         var tokensJson = a.SnapshotId is { } tsid ? c.ExecuteScalar<string?>("SELECT CustomTokensJson FROM Snapshots WHERE Id = @tsid", new { tsid }) : null;
         return new AccountDetail(a, snaps, boosters, custom, decks.Count - custom.Count, ranks, names, owned, cards?.HasRarity ?? false, Tokens(tokensJson));
@@ -320,7 +317,7 @@ public sealed partial class Queries(Database db, Cards.CardNames? cards = null, 
                 var i = info.GetValueOrDefault(kv.Key);
                 return new CardAcrossAccounts(kv.Key, i?.Name, i?.Rarity, i?.Set,
                     kv.Value.OrderByDescending(h => h.Copies).ThenBy(h => h.DisplayName, StringComparer.OrdinalIgnoreCase).ToList(),
-                    i?.Types, i?.Cost, i?.Colors, i?.Alchemy ?? false);
+                    i?.Types, i?.Cost, i?.Colors, i?.Alchemy ?? false, ImageUrl(i?.Name));
             })
             .OrderByDescending(x => x.Holders.Count).ThenBy(x => x.Name ?? "~").ThenBy(x => x.CardId)
             .ToList();
@@ -402,6 +399,10 @@ public sealed partial class Queries(Database db, Cards.CardNames? cards = null, 
     }
 
     public const int LeaderCount = 20;
+
+    /// <summary>Only a card with a downloaded image gets a URL; the page draws a placeholder for the rest.</summary>
+    private string? ImageUrl(string? name) =>
+        name is not null && images?.Has(name) == true ? "/card-images/" + Uri.EscapeDataString(CardImageStore.KeyFor(name)) + ".jpg" : null;
 
     /// <summary>Property-mapped like the other rows read from the view (see AccountLatest).</summary>
     private sealed class TokenRow

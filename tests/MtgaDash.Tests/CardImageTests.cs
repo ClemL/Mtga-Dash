@@ -126,3 +126,74 @@ public sealed class CardImageTests
         Assert.AreEqual(1, (await store.DownloadMissingAsync(["Elf Lord"], null, CancellationToken.None)).Downloaded);
     }
 }
+
+[TestClass]
+public sealed class CardImageAutoTests
+{
+    /// <summary>One account holding two named rares at 4 copies (from a saved deck), with a card database.</summary>
+    private static (TempDb T, MtgaDash.Data.Queries Q, CardImageStore Store, FakeScryfall Fake) Setup()
+    {
+        var t = new TempDb();
+        var db = Path.Combine(t.Folder, "Raw_CardDatabase_x.mtga");
+        using (var c = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={db};Pooling=False"))
+        {
+            c.Open();
+            Dapper.SqlMapper.Execute(c, """
+                CREATE TABLE Cards(GrpId INTEGER, TitleId INTEGER, Rarity INTEGER);
+                CREATE TABLE Localizations_enUS(LocId INTEGER, Loc TEXT);
+                INSERT INTO Cards VALUES (80000, 1, 4), (80001, 2, 5);
+                INSERT INTO Localizations_enUS VALUES (1, 'Elf Lord'), (2, 'Tide Caller');
+                """);
+        }
+        File.WriteAllText(t.File("p.log"), Fixtures.Text([Fixtures.Startup(), Fixtures.Login("a#1"), .. Fixtures.StartHook(), Fixtures.DeckUpsert("c0", main: 8, side: 0)]));
+        t.Ingestor.IngestFile(t.File("p.log"));
+        var fake = new FakeScryfall
+        {
+            Answer = r => r.RequestUri!.Host == "scryfall.test"
+                ? FakeScryfall.Json("""{"data":[{"image_uris":{"normal":"https://img.test/a.jpg"}}]}""")
+                : FakeScryfall.Jpeg("x"),
+        };
+        var store = new CardImageStore(t.File("card-images"), "https://scryfall.test", CardImageStore.CreateClient(fake), NullLogger.Instance);
+        var q = new MtgaDash.Data.Queries(t.Db, new CardNames(db, NullLogger.Instance), images: store);
+        return (t, q, store, fake);
+    }
+
+    private static CardImageAutoDownload Auto(MtgaDash.Data.Queries q, CardImageStore store, bool on = true) =>
+        new(new MtgaDashOptions { AutoDownloadCardImages = on }, q, store, new MtgaDash.Ingestion.ChangeNotifier(), NullLogger<CardImageAutoDownload>.Instance);
+
+    [TestMethod]
+    public async Task Missing_images_are_fetched_without_a_click_and_a_second_run_does_nothing()
+    {
+        var (t, q, store, fake) = Setup();
+        using (t)
+        {
+            CollectionAssert.AreEqual(new[] { "Elf Lord", "Tide Caller" }, q.ImageWanted().ToArray());
+            var auto = Auto(q, store);
+            Assert.IsTrue(auto.RunOnce());
+            for (var i = 0; i < 100 && store.Status(q.ImageWanted().ToList()).Running; i++) await Task.Delay(50);
+            Assert.IsTrue(store.Has("Elf Lord") && store.Has("Tide Caller"));
+
+            fake.Requests.Clear();
+            Assert.IsFalse(auto.RunOnce(), "nothing missing, nothing started");
+            Assert.AreEqual(0, fake.Requests.Count);
+
+            // The By card view and account pages now carry the image's address.
+            var elf = q.Cards(minCopies: 3).Cards.Single(c => c.Name == "Elf Lord");
+            Assert.AreEqual("/card-images/Elf%20Lord.jpg", elf.Image);
+        }
+    }
+
+    [TestMethod]
+    public async Task Turned_off_it_never_starts()
+    {
+        var (t, q, store, fake) = Setup();
+        using (t)
+        {
+            var auto = Auto(q, store, on: false);
+            await auto.StartAsync(CancellationToken.None);
+            await Task.Delay(200);
+            Assert.AreEqual(0, fake.Requests.Count);
+            await auto.StopAsync(CancellationToken.None);
+        }
+    }
+}

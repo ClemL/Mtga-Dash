@@ -330,7 +330,13 @@ images are downloaded once, from [Scryfall](https://scryfall.com/docs/api), into
 database (setting `CardImageFolder`), one JPEG per card name with the card's **newest art**. Only rares and
 mythics some account holds at 3+ copies are fetched; card names need `CardDbPath`.
 
-Two ways to fetch the missing ones:
+**Automatically:** 2 minutes after new log data stops arriving (in practice, just after a play session) and
+once after the dashboard starts, missing images are downloaded in the background. Settings:
+`AutoDownloadCardImages` (default `true`) and `AutoDownloadDelaySeconds` (default `120`). It only asks for
+what is missing, so a quiet period with nothing new makes no requests. The By card view on the Cards tab
+shows a thumbnail per card; click it, or the name, for the full image and every account holding the card.
+
+Two ways to fetch them by hand:
 
 - **Download missing images** on an account's page, or on the Status tab, or `Ctrl+K` → "Download missing
   card images". Progress shows on the page.

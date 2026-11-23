@@ -354,7 +354,11 @@ Two ways to fetch them by hand:
   It prints each card as it goes and exits. Run it again after saving new decks; it only fetches what is
   missing.
 
-Requests are paced at 10 per second, as Scryfall asks. A card Scryfall has no image for yet (a brand-new or
+Searches are paced at under 2 a second, and image files at 10 a second. If Scryfall still answers "too many
+requests" (HTTP 429), the download waits as long as Scryfall's `Retry-After` header says (30 seconds if it says
+nothing) and tries once more. If Scryfall refuses again, the run stops and no download starts for 30 minutes,
+because an address that keeps going after a 429 risks a ban. The Status tab and the account page show until
+when; cards not reached stay missing and are fetched by the next run. A card Scryfall has no image for yet (a brand-new or
 digital-only card) shows a placeholder with its name, cost and type, and is asked for again after a week. The
 list of missing names is also at `http://localhost:5080/api/cardimages/missing` (one per line) for any other
 tool. The static export shows placeholders: images are not embedded.

@@ -11,6 +11,11 @@ if (args.Contains("--download-card-images", StringComparer.OrdinalIgnoreCase))
     var wanted = tool.Services.GetRequiredService<Queries>().ImageWanted();
     Console.WriteLine($"{wanted.Count} rares and mythics held at 3+ copies; images go to {images.Folder}");
     if (wanted.Count == 0) Console.WriteLine("Nothing to do. Card names need CardDbPath, and cards need saved decks.");
+    if (images.PausedUntil is { } until)
+    {
+        Console.WriteLine($"Scryfall asked to slow down; downloads are paused until {until.ToLocalTime():t}. Try again then.");
+        return 1;
+    }
     var report = await images.DownloadMissingAsync(wanted, Console.WriteLine, CancellationToken.None);
     return report.Failed > 0 ? 1 : 0;
 }

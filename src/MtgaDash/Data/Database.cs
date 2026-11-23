@@ -184,6 +184,15 @@ public sealed class Database
         LEFT JOIN Ranks r ON r.DisplayName = a.DisplayName AND r.CapturedAtUtc = (
             SELECT MAX(r2.CapturedAtUtc) FROM Ranks r2 WHERE r2.DisplayName = a.DisplayName);
         """,
+        // 4: the other starter decks the owner hid by hand, hidden by default on any new database.
+        """
+        INSERT OR IGNORE INTO IgnoredDeckNames(Name, AddedUtc) VALUES
+            ('Cold-Blooded Killers', '2026-11-23T00:00:00.000Z'),
+            ('Destructive Firepower', '2026-11-23T00:00:00.000Z'),
+            ('Goblins Everywhere!', '2026-11-23T00:00:00.000Z'),
+            ('Large and in Charge', '2026-11-23T00:00:00.000Z'),
+            ('Out for Blood', '2026-11-23T00:00:00.000Z');
+        """,
     ];
 }
 

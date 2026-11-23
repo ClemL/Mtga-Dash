@@ -31,3 +31,11 @@
 2026-11-19T21:42:00Z - Starter deck names (Aerial Domination, Forest's Might, Imported Deck, Keep the Peace and any you hide) are treated like precons
 2026-11-19T21:42:00Z - Totals tab lists the accounts with the most boosters and the most rare wildcards
 2026-11-21T08:25:00Z - Account pages and the Accounts table no longer show rank, common and uncommon wildcards or the gems and gold chart
+2026-11-23T22:01:00Z - Account pages show the rares and mythics held at 3+ copies as card images, with placeholders where there is no image yet; the wildcard chart and booster list are gone
+2026-11-23T22:01:00Z - Card images are downloaded from Scryfall with one button, or by running MtgaDash.exe --download-card-images
+2026-11-23T22:05:00Z - Draft and event tokens show on each account and as Totals leaderboards; the boosters-by-set table is gone
+2026-11-23T22:05:00Z - Nine starter deck names are hidden from the start, including Cold-Blooded Killers, Goblins Everywhere! and Out for Blood
+2026-11-23T22:08:00Z - The Cards tab's By card view shows a thumbnail of each card, and the card details show the full image
+2026-11-23T22:08:00Z - Missing card images download by themselves two minutes after a play session, and once after the dashboard starts
+2026-11-23T22:21:00Z - The Status tab shows the last card image download: when, what started it, and the cards it saved, could not find or failed on
+2026-11-23T22:21:00Z - Card thumbnails also appear in the Cards tab's By account view and in each account's Known rares table

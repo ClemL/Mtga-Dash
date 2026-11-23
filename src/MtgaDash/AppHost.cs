@@ -48,13 +48,18 @@ public static class AppHost
         var config = builder.Configuration;
         builder.Services.AddSingleton(sp => new CardNames(() => config[$"{MtgaDashOptions.Section}:{nameof(MtgaDashOptions.CardDbPath)}"] ?? "",
             sp.GetRequiredService<ILogger<CardNames>>()));
-        builder.Services.AddSingleton(sp => new Queries(db, sp.GetRequiredService<CardNames>(), sp.GetRequiredService<ExceptionStore>(), options));
+        builder.Services.AddSingleton(sp => new CardImageStore(CardImageFolder(options), options.CardImageApi, CardImageStore.CreateClient(),
+            sp.GetRequiredService<ILogger<CardImageStore>>()));
+        builder.Services.AddSingleton(sp => new Queries(db, sp.GetRequiredService<CardNames>(), sp.GetRequiredService<ExceptionStore>(), options,
+            sp.GetRequiredService<CardImageStore>()));
         builder.Services.AddSingleton(sp => new LogIngestor(db, sp.GetRequiredService<ILogger<LogIngestor>>(),
             onWarning: sp.GetRequiredService<StatusTracker>().Warning, onEvent: sp.GetRequiredService<ActivityLog>().Record));
         builder.Services.AddSingleton<PageRenderer>();
         builder.Services.AddSingleton<StartPage>();
         builder.Services.AddSingleton<StaticExporter>();
         builder.Services.AddSingleton<IngestionService>();
+        builder.Services.AddSingleton<CardImageAutoDownload>();
+        builder.Services.AddHostedService(sp => sp.GetRequiredService<CardImageAutoDownload>());
         builder.Services.AddSingleton<Game.GameLauncher>();
         builder.Services.AddHostedService(sp => sp.GetRequiredService<Game.GameLauncher>());
         builder.Services.AddHostedService(sp => sp.GetRequiredService<IngestionService>());
@@ -71,6 +76,11 @@ public static class AppHost
         app.Lifetime.ApplicationStarted.Register(() => app.Services.GetRequiredService<StartPage>().Announce(app.Urls));
         return app;
     }
+
+    /// <summary>CardImageFolder, or <c>card-images</c> beside the database, which survives republishing.</summary>
+    public static string CardImageFolder(MtgaDashOptions o) => !string.IsNullOrWhiteSpace(o.CardImageFolder)
+        ? MtgaDashOptions.Resolve(o.CardImageFolder)
+        : Path.Combine(Path.GetDirectoryName(MtgaDashOptions.Resolve(o.DatabasePath)) ?? ".", "card-images");
 
     /// <summary>ExceptionsPath, or <c>account-exceptions.json</c> beside the database, which survives republishing.</summary>
     public static string ExceptionsPath(MtgaDashOptions o) => !string.IsNullOrWhiteSpace(o.ExceptionsPath)
@@ -109,6 +119,15 @@ public static class AppHost
         api.MapGet("/statuses", (Queries q) => q.Statuses());
         api.MapGet("/cards/{id:int}/holders", (Queries q, int id) => q.CardHolders(id));
         api.MapGet("/decknames", (Queries q) => q.DeckNameLists());
+        api.MapGet("/cardimages", (Queries q, CardImageStore images) => images.Status(q.ImageWanted().ToList()));
+        // The missing list as plain text, one name per line, for any other tool that fetches images.
+        api.MapGet("/cardimages/missing", (Queries q, CardImageStore images) =>
+            Results.Text(string.Join("\n", images.Missing(q.ImageWanted())), "text/plain; charset=utf-8"));
+        // Only a name the store itself could have written is served: KeyFor allows no separators or "..".
+        app.MapGet("/card-images/{key}.jpg", (string key, CardImageStore images) =>
+            images.FileForKey(key) is { } file
+                ? Results.File(file, "image/jpeg", lastModified: File.GetLastWriteTimeUtc(file))
+                : Results.NotFound());
         api.MapGet("/cards", (Queries q, int? minCopies, string? rarity) =>
             q.Cards(Math.Clamp(minCopies ?? 3, 1, 99), rarity?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)));
         api.MapGet("/status", (StatusTracker s) => s.Snapshot());
@@ -168,6 +187,8 @@ public static class AppHost
             notifier.Notify();
             return Results.NoContent();
         });
+        write.MapPost("/cardimages/download", (Queries q, CardImageStore images) =>
+            Results.Ok(new { started = images.StartDownload(q.ImageWanted().ToList()) }));
         write.MapPost("/reimport", (IngestionService s) => Results.Ok(new { imported = s.ImportAccounts() }));
         write.MapPost("/export", (StaticExporter e) =>
         {

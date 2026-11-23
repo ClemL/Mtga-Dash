@@ -308,21 +308,31 @@ details > summary { cursor: pointer; padding: var(--cell-py) 0; }
 .deck .cards li { break-inside: avoid; }
 .back { margin-bottom: var(--block); }
 
-/* Charts: thin 2px lines, recessive grid, a crosshair and tooltip on hover. */
-.chart { position: relative; }
-.chart svg { width: 100%; height: auto; display: block; overflow: visible; }
-.chart .grid line { stroke: var(--border); stroke-width: 1; }
-.chart .axis text { fill: var(--fg-dim); font-size: calc(11px * var(--text-scale)); }
-.chart .series path { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
-.chart .series circle { stroke: var(--panel); stroke-width: 2; }
-.chart .label text { font-size: calc(11px * var(--text-scale)); fill: var(--fg); }
-.chart .cross { stroke: var(--fg-dim); stroke-width: 1; stroke-dasharray: 3 3; }
-.chart .tip {
-  position: absolute; pointer-events: none; background: var(--panel); border: 1px solid var(--border-strong);
-  border-radius: 6px; padding: 6px 8px; font-size: calc(12px * var(--text-scale)); box-shadow: var(--shadow); white-space: nowrap; z-index: 5;
-}
-.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: calc(12px * var(--text-scale)); color: var(--fg); margin-bottom: 4px; }
-.swatch { display: inline-block; width: 12px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 5px; }
+/* Card gallery: images at the card's own proportions (488 × 680), placeholders the same size. */
+.gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: var(--gap); }
+.gallery-item { margin: 0; min-width: 0; }
+.gallery-item figcaption { font-size: calc(12px * var(--text-scale)); color: var(--fg-dim); margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gallery-open { all: unset; cursor: pointer; display: block; position: relative; width: 100%; aspect-ratio: 488 / 680; border-radius: 4.75% / 3.5%; overflow: hidden; }
+.gallery-open:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.gallery-open img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.card-ph { box-sizing: border-box; width: 100%; height: 100%; border: 2px dashed var(--border-strong); border-radius: inherit; background: var(--panel-2);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 10px; text-align: center; overflow: hidden;
+  font-size: calc(12px * var(--text-scale)); overflow-wrap: anywhere; }
+.card-ph .small { font-size: calc(11px * var(--text-scale)); }
+.copies-badge { position: absolute; right: 6px; bottom: 6px; background: var(--panel); color: var(--fg); border: 1px solid var(--border-strong); border-radius: 9px; padding: 0 7px; font-size: calc(12px * var(--text-scale)); font-weight: 700; }
+.thumb-cell { width: 1%; padding-top: 3px; padding-bottom: 3px; }
+.thumb { all: unset; cursor: pointer; display: block; width: 40px; aspect-ratio: 488 / 680; border-radius: 3px; overflow: hidden; }
+.thumb:focus-visible { outline: 2px solid var(--accent); }
+.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.thumb-ph { display: grid; place-items: center; width: 100%; height: 100%; box-sizing: border-box; border: 1px dashed var(--border-strong); background: var(--panel-2); color: var(--fg-dim); font-size: calc(11px * var(--text-scale)); }
+.thumb-chips { line-height: 1.2; }
+/* A small image next to each card name in the By account view; the chips wrap inside the cell. */
+.thumb-chip { display: inline-flex; align-items: center; gap: var(--gap); margin: 2px calc(var(--gap) * 1.5) 2px 0; vertical-align: middle; }
+.thumb-chip .thumb { width: 28px; }
+.last-run summary { cursor: pointer; }
+.last-run p { margin: var(--gap) 0 0; overflow-wrap: anywhere; }
+.dialog-card { display: block; width: min(244px, 60%); margin: 0 auto var(--block); border-radius: 4.75% / 3.5%; }
+.copies-badge.four { background: var(--accent); color: var(--panel); border-color: var(--accent); }
 
 /* Footer: pushed to the foot of the page when the content is short. */
 .build-info {
@@ -1006,6 +1016,14 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
       body)));
   }
 
+  // A tile only when the account has tokens of that kind, with each kind's own names underneath.
+  function tokenTile(tokens, kind, label) {
+    var list = (tokens || []).filter(function (x) { return x.kind === kind; });
+    if (!list.length) return null;
+    var total = list.reduce(function (n, x) { return n + x.count; }, 0);
+    return tile(label, fmt(total), list.length > 1 || list[0].label.toLowerCase() !== kind ? list.map(function (x) { return x.label + " ×" + x.count; }).join(", ") : null);
+  }
+
   function tile(label, value, sub) {
     return h("div", { class: "tile" }, h("div", { class: "label", text: label }), h("div", { class: "value", text: value }), sub ? h("div", { class: "sub", text: sub }) : null);
   }
@@ -1019,24 +1037,37 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
       tile("Rare wildcards", fmt(t.wcRare)),
       tile("Mythic wildcards", fmt(t.wcMythic)),
       tile("Display names seen", fmt(t.players), fmt(t.accounts) + " accounts in the CSV")));
-    var sets = h("tbody");
-    t.boostersBySet.forEach(function (b) {
-      sets.appendChild(h("tr", null, h("td", { text: b.setCode }), h("td", { class: "num", text: fmt(b.count) }), h("td", { class: "num", text: fmt(b.accounts) })));
-    });
     var buckets = h("tbody");
     Object.keys(t.loginBuckets).forEach(function (k) {
       buckets.appendChild(h("tr", null, h("td", { text: k === "never" ? "Never" : k === "older" ? "Older than 90 days" : "Within " + k.slice(1) }), h("td", { class: "num", text: fmt(t.loginBuckets[k]) })));
     });
     view.appendChild(h("div", { class: "grid-2" },
-      h("section", { class: "card" }, h("h3", { text: "Boosters by set" }),
-        t.boostersBySet.length
-          ? h("div", { class: "table-wrap" }, h("table", null, h("thead", null, h("tr", null, h("th", { text: "Set" }), h("th", { class: "num", text: "Boosters" }), h("th", { class: "num", text: "Accounts" }))), sets))
-          : h("p", { class: "muted", text: "No boosters recorded." })),
-      h("section", { class: "card" }, h("h3", { text: "Last login" }),
-        h("div", { class: "table-wrap" }, h("table", null, h("thead", null, h("tr", null, h("th", { text: "When" }), h("th", { class: "num", text: "Accounts" }))), buckets)))));
-    view.appendChild(h("div", { class: "grid-2" },
       leaderTable("Most boosters", t.mostBoosters || [], "boosters"),
       leaderTable("Most rare wildcards", t.mostRareWildcards || [], "rares")));
+    // Token boards appear only for kinds some account has; otherwise the token names found are listed, so a
+    // draft or event token MTGA names differently can be spotted.
+    var draft = t.mostDraftTokens || [], event = t.mostEventTokens || [];
+    if (draft.length || event.length) view.appendChild(h("div", { class: "grid-2" },
+      draft.length ? tokenLeaderTable("Most draft tokens", draft) : null,
+      event.length ? tokenLeaderTable("Most event tokens", event) : null));
+    var others = (t.tokenTotals || []).filter(function (x) { return x.kind === "other"; });
+    if (others.length) view.appendChild(h("section", { class: "card" }, h("h3", { text: "Other tokens across accounts" }),
+      h("p", { class: "muted", text: others.map(function (x) { return x.label + " ×" + fmt(x.count); }).join(" · ") })));
+    view.appendChild(h("section", { class: "card" }, h("h3", { text: "Last login" }),
+      h("div", { class: "table-wrap" }, h("table", null, h("thead", null, h("tr", null, h("th", { text: "When" }), h("th", { class: "num", text: "Accounts" }))), buckets))));
+  }
+
+  function tokenLeaderTable(title, rows) {
+    return h("section", { class: "card" }, h("h3", { text: title }),
+      h("div", { class: "table-wrap" }, h("table", null,
+        h("thead", null, h("tr", null, ["#", "Account", "Tokens", "Last login"].map(function (x, i) { return h("th", { class: i === 0 || i === 2 ? "num" : null, text: x }); }))),
+        h("tbody", null, rows.map(function (a, i) {
+          return h("tr", { class: "clickable", tabindex: "0", onclick: function () { go("account", a.email); }, onkeydown: function (e) { if (e.key === "Enter") go("account", a.email); } },
+            h("td", { class: "num", text: String(i + 1) }),
+            h("td", null, h("span", { text: a.displayName || "—" }), h("br"), h("span", { class: "mono muted", text: a.email })),
+            h("td", { class: "num strong", text: fmt(a.count) }),
+            h("td", { text: P.relativeTime(a.lastLoginUtc, Date.now()) || "never" }));
+        })))));
   }
 
   // Top accounts by one measure, with the other alongside, each a link to the account.
@@ -1127,6 +1158,25 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
     return n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : n >= 1024 ? Math.round(n / 1024) + " KB" : n + " B";
   }
 
+  // The latest image download, whichever started it, with the names it saved, could not find and failed on.
+  function renderLastImageRun(run, now) {
+    if (!run) return h("p", { class: "muted", text: "Last image download: none yet." });
+    var how = run.trigger === "automatic" ? "automatic, after new log data" : run.trigger === "button" ? "from the Download button" : "from the command line";
+    function names(label, list) {
+      if (!list.length) return null;
+      var shown = list.slice(0, 60);
+      return h("p", null, h("strong", { text: label + " (" + fmt(list.length) + "): " }),
+        h("span", { text: shown.join(", ") + (list.length > shown.length ? ", and " + fmt(list.length - shown.length) + " more" : "") }));
+    }
+    var total = run.saved.length + run.notFound.length + run.failed.length;
+    return h("details", { class: "card last-run", open: total > 0 && total <= 60 },
+      h("summary", null, "Last image download: ", h("strong", { text: P.relativeTime(run.finishedUtc, now) || run.finishedUtc }),
+        h("span", { class: "muted", text: " · " + how + " · " + fmt(run.saved.length) + " saved, " + fmt(run.notFound.length) + " with no image yet, "
+          + fmt(run.failed.length) + " failed" + (run.completed ? "" : " · stopped before the end") })),
+      total ? null : h("p", { class: "muted", text: "Nothing was missing." }),
+      names("Saved", run.saved), names("No image on Scryfall yet", run.notFound), names("Failed, tried again next time", run.failed));
+  }
+
   function renderStatus(view) {
     var s = state.ingest;
     if (!s) { view.appendChild(h("p", { class: "muted", text: "No status yet." })); return; }
@@ -1135,6 +1185,14 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
       h("span", null, "Last poll ", h("strong", { text: P.relativeTime(s.lastPollUtc, now) || "not yet" }),
         s.lastPollUtc ? h("span", { class: "muted", text: " · took " + s.lastPollMs + " ms · every " + s.pollSeconds + " s" }) : null),
       h("button", { type: "button", onclick: refreshStatus, text: "Refresh" })));
+    var ims = state.imageStatus;
+    if (!ims && !state.imageStatusLoading) { state.imageStatusLoading = true; loadImageStatus().then(function () { state.imageStatusLoading = false; if (state.route.view === "status") render(); }); }
+    if (ims) view.appendChild(h("div", { class: "toolbar" },
+      h("span", null, "Card images: ", h("strong", { text: fmt(ims.have) + " of " + fmt(ims.wanted) }),
+        h("span", { class: "muted", text: " rares and mythics at 3+ copies · " + fmt(ims.missing) + " to download · " + fmt(ims.notFound) + " with no image yet · " + ims.folder })),
+      ims.missing && !ims.running ? h("button", { type: "button", onclick: startImageDownload, text: "Download missing images" }) : null,
+      ims.running ? h("span", { class: "muted", text: "Downloading " + ims.done + " of " + ims.toDo + "…" }) : null));
+    if (ims) view.appendChild(renderLastImageRun(ims.lastRun, now));
     view.appendChild(h("div", { class: "toolbar" },
       h("span", null, "Card names: ", h("strong", { text: state.cards && state.cards.rarityKnown ? "on" : "off" })),
       h("button", { type: "button", onclick: openCardDbSetup, text: state.cards && state.cards.rarityKnown ? "Check" : "Set up card names" })));
@@ -1423,9 +1481,10 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
     view.appendChild(h("p", { class: "muted", text: fmt(cards.length) + " cards held at " + c.minCopies + "+ copies by " + fmt(Object.keys(accounts).length) + " of " + fmt(c.accountsWithDecks) + " accounts with saved decks. Click a card to see every account that has it." }));
     if (!cards.length) { view.appendChild(h("p", { class: "muted", text: "No card matches." })); return; }
     view.appendChild(h("div", { class: "table-wrap" }, h("table", null,
-      h("thead", null, h("tr", null, ["Card", "Cost", "Color", "Type", "Rarity", "Accounts", "Held by (copies)"].map(function (t, i) { return h("th", { class: i === 5 ? "num" : null, text: t }); }))),
+      h("thead", null, h("tr", null, ["", "Card", "Cost", "Color", "Type", "Rarity", "Accounts", "Held by (copies)"].map(function (t, i) { return h("th", { class: i === 6 ? "num" : null, text: t, "aria-label": i === 0 ? "Image" : null }); }))),
       h("tbody", null, cards.slice(0, 500).map(function (x) {
         return h("tr", null,
+          h("td", { class: "thumb-cell" }, cardThumb(x)),
           h("td", null, h("button", { type: "button", class: "link-btn", title: "Every account with " + cardLabel(x), onclick: function () { openCardHolders(x); }, text: cardLabel(x) }),
             x.alchemy ? h("span", { class: "pill", title: "Alchemy (digital-only or rebalanced)", text: "A" }) : null),
           h("td", { class: "mono", text: costText(x) }),
@@ -1461,8 +1520,9 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
         return h("tr", null,
           h("td", null, a.email ? h("a", { href: "#/account/" + encodeURIComponent(a.email), text: a.displayName }) : h("span", { title: "Not matched to an account", text: a.displayName })),
           h("td", { class: "num", text: fmt(a.cards.length) }),
-          h("td", { class: "notes" }, a.cards.map(function (e, i) {
-            return [i ? ", " : null, h("button", { type: "button", class: "link-btn", onclick: function () { openCardHolders(e.card); }, text: cardLabel(e.card) + " ×" + e.copies })];
+          h("td", { class: "notes thumb-chips" }, a.cards.map(function (e) {
+            return h("span", { class: "thumb-chip" }, cardThumb(e.card),
+              h("button", { type: "button", class: "link-btn", onclick: function () { openCardHolders(e.card); }, text: cardLabel(e.card) + " ×" + e.copies }));
           })));
       })))));
   }
@@ -1477,6 +1537,7 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
       // append() flattens the arrays below; replaceChildren would print an array as text.
       body.replaceChildren();
       append(body, [
+        card.image && !READ_ONLY ? h("img", { class: "dialog-card", src: card.image, alt: cardLabel(card) }) : null,
         h("p", { class: "muted" }, [card.cost, card.types, card.rarity].filter(Boolean).join(" · "), " ", colorPips(card.colors), card.alchemy ? " · Alchemy" : ""),
         READ_ONLY ? h("p", { class: "muted", text: "This snapshot only lists accounts at the Cards tab's minimum copies." }) : null,
         groups.length ? groups.map(function (g) {
@@ -1513,6 +1574,77 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
         })) : h("p", { class: "muted", text: "No hidden names." }))));
   }
 
+  // ---------- Card gallery: the account's rares and mythics at 3+ copies, as images ----------
+
+  // A small image for table rows; the offline snapshot and cards without an image get an empty frame.
+  function cardThumb(k) {
+    return h("button", { type: "button", class: "thumb", title: cardLabel(k) + ": every account with it", onclick: function () { openCardHolders(k); } },
+      k.image && !READ_ONLY ? h("img", { src: k.image, alt: "", loading: "lazy" }) : h("span", { class: "thumb-ph", "aria-hidden": "true", text: "?" }));
+  }
+
+  function cardPlaceholder(k) {
+    return h("div", { class: "card-ph", role: "img", "aria-label": cardLabel(k) + " (no image yet)" },
+      h("strong", { text: cardLabel(k) }),
+      k.cost ? h("span", { class: "mono", text: k.cost }) : null,
+      k.types ? h("span", { class: "muted", text: k.types }) : null,
+      k.rarity ? rarityPill(k.rarity) : null,
+      h("span", { class: "muted small", text: "No image yet" }));
+  }
+
+  function renderGallery(d) {
+    var section = h("section", { class: "card gallery-card" }, h("h3", { text: "Rares and mythics at 3+ copies" }));
+    var cards = (d.knownCards || []).filter(function (k) {
+      return k.copies >= 3 && (!d.cardRarityKnown || k.rarity === "rare" || k.rarity === "mythic") && P.cardMatches(k, state.cardFilters);
+    }).sort(function (a, b) { return Math.min(b.copies, 4) - Math.min(a.copies, 4) || cardLabel(a).localeCompare(cardLabel(b)); });
+    if (!cards.length) {
+      section.appendChild(h("p", { class: "muted", text: (d.knownCards || []).length
+        ? "No rare or mythic at 3+ copies with the current filters (Type, Ignore lands, Alchemy on the Cards tab)."
+        : "No saved deck lists for this account yet. Save a deck in MTGA's deck builder and its cards appear here." }));
+      return section;
+    }
+    // Images are served by this app, so the offline snapshot shows placeholders. Whether anything is left to
+    // download comes from the server, which leaves out cards Scryfall recently had no image for.
+    var four = cards.filter(function (k) { return k.copies >= 4; }).length;
+    var st = state.imageStatus;
+    if (!READ_ONLY && !st && !state.imageStatusLoading) {
+      state.imageStatusLoading = true;
+      loadImageStatus().then(function () { state.imageStatusLoading = false; if (state.route.view === "account") render(); });
+    }
+    var missing = !READ_ONLY && st ? st.missing : 0;
+    section.appendChild(h("div", { class: "toolbar" },
+      h("span", { class: "muted", text: fmt(cards.length) + " cards: " + fmt(four) + " with 4+, " + fmt(cards.length - four) + " with 3" }),
+      missing && !st.running ? h("button", { type: "button", onclick: startImageDownload, title: "Fetch the newest art from Scryfall for every rare and mythic held at 3+ copies on any account", text: "Download missing images (" + missing + ")" }) : null,
+      st && (st.running || st.lastMessage) ? h("span", { class: "muted", "aria-live": "polite", text: st.running ? "Downloading " + st.done + " of " + st.toDo + "… " + (st.lastMessage || "") : st.lastMessage }) : null));
+    if (!d.cardRarityKnown) section.appendChild(cardDbNotice(false, null));
+    section.appendChild(h("div", { class: "gallery" }, cards.map(function (k) {
+      return h("figure", { class: "gallery-item" },
+        h("button", { type: "button", class: "gallery-open", title: cardLabel(k) + ": every account with it", onclick: function () { openCardHolders(k); } },
+          k.image && !READ_ONLY ? h("img", { src: k.image, alt: cardLabel(k), loading: "lazy" }) : cardPlaceholder(k),
+          h("span", { class: "copies-badge" + (k.copies >= 4 ? " four" : ""), text: "×" + k.copies })),
+        h("figcaption", { text: cardLabel(k) }));
+    })));
+    return section;
+  }
+
+  function loadImageStatus() {
+    if (READ_ONLY) return Promise.resolve();
+    return api("/api/cardimages").then(function (st) { state.imageStatus = st; return st; });
+  }
+  // Starts the download, then follows it every 2 s; when it ends, the open account page reloads to show the images.
+  function startImageDownload() {
+    if (READ_ONLY) return;
+    mutate("POST", "/api/cardimages/download").then(function () {
+      function poll() {
+        loadImageStatus().then(function (st) {
+          render();
+          if (st.running) setTimeout(poll, 2000);
+          else if (state.route.view === "account") loadDetail(state.route.email).then(render);
+        }, function () { setTimeout(poll, 5000); });
+      }
+      poll();
+    }, function (e) { alert("Could not start the download: " + e.message); });
+  }
+
   function renderKnownCards(d) {
     var section = h("section", { class: "card" }, h("h3", { text: "Known rares and mythics (from saved decks)" }));
     var all = (d.knownCards || []).filter(function (k) { return !d.cardRarityKnown || k.rarity === "rare" || k.rarity === "mythic"; });
@@ -1533,9 +1665,10 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
     var notice = cardDbNotice(d.cardRarityKnown, null);
     if (notice) section.appendChild(notice);
     section.appendChild(shown.length ? h("div", { class: "table-wrap" }, h("table", null,
-      h("thead", null, h("tr", null, ["Card", "Cost", "Color", "Type", "Rarity", "Copies (at least)", "Seen in"].map(function (t, i) { return h("th", { class: i === 5 ? "num" : null, text: t }); }))),
+      h("thead", null, h("tr", null, ["", "Card", "Cost", "Color", "Type", "Rarity", "Copies (at least)", "Seen in"].map(function (t, i) { return h("th", { class: i === 6 ? "num" : null, "aria-label": i === 0 ? "Image" : null, text: t }); }))),
       h("tbody", null, shown.map(function (k) {
         return h("tr", null,
+          h("td", { class: "thumb-cell" }, cardThumb(k)),
           h("td", null, h("button", { type: "button", class: "link-btn", title: "Every account with this card", onclick: function () { openCardHolders(k); }, text: cardLabel(k) }),
             k.alchemy ? h("span", { class: "pill", title: "Alchemy", text: "A" }) : null),
           h("td", { class: "mono", text: costText(k) }),
@@ -1547,88 +1680,6 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
       })))) : h("p", { class: "muted", text: "No known card at these settings." }));
     return section;
   }
-
-  // Two measures of different scale get two charts, never two y-axes.
-  function lineChart(title, points, series) {
-    var wrap = h("div", { class: "chart" });
-    wrap.appendChild(h("div", { class: "legend" }, series.map(function (sr) {
-      return h("span", null, h("span", { class: "swatch", style: "background:var(" + sr.color + ")" }), sr.label);
-    })));
-    if (!points.length) { wrap.appendChild(h("p", { class: "muted", text: "No snapshots yet." })); return wrap; }
-    var W = 560, H = 190, L = 48, R = 62, T = 8, B = 24;
-    var times = points.map(function (p) { return Date.parse(p.capturedAtUtc); });
-    var t0 = times[0], t1 = times[times.length - 1];
-    var max = 0;
-    series.forEach(function (sr) { points.forEach(function (p) { if (p[sr.key] != null) max = Math.max(max, p[sr.key]); }); });
-    max = niceMax(max);
-    var x = function (t) { return t1 === t0 ? L + (W - L - R) / 2 : L + (t - t0) / (t1 - t0) * (W - L - R); };
-    var y = function (v) { return T + (1 - v / max) * (H - T - B); };
-    var svg = s("svg", { viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": title });
-    var grid = s("g", { class: "grid" }), axis = s("g", { class: "axis" });
-    [0, 0.5, 1].forEach(function (f) {
-      var v = max * f;
-      grid.appendChild(s("line", { x1: L, x2: W - R, y1: y(v), y2: y(v) }));
-      axis.appendChild(s("text", { x: L - 6, y: y(v) + 4, "text-anchor": "end" }, compact(v)));
-    });
-    axis.appendChild(s("text", { x: L, y: H - 6 }, new Date(t0).toLocaleDateString()));
-    if (t1 !== t0) axis.appendChild(s("text", { x: W - R, y: H - 6, "text-anchor": "end" }, new Date(t1).toLocaleDateString()));
-    svg.appendChild(grid); svg.appendChild(axis);
-    var labels = s("g", { class: "label" });
-    series.forEach(function (sr) {
-      var g = s("g", { class: "series" });
-      var d = "", last = null;
-      points.forEach(function (p, i) {
-        if (p[sr.key] == null) return;
-        d += (d ? "L" : "M") + x(times[i]).toFixed(1) + " " + y(p[sr.key]).toFixed(1);
-        last = { x: x(times[i]), y: y(p[sr.key]), v: p[sr.key] };
-      });
-      if (points.length > 1) g.appendChild(s("path", { d: d, stroke: "var(" + sr.color + ")" }));
-      else if (last) g.appendChild(s("circle", { cx: last.x, cy: last.y, r: 4, fill: "var(" + sr.color + ")" }));
-      svg.appendChild(g);
-      // A direct label at the line's end, so identity is never color alone.
-      if (last) labels.appendChild(s("text", { x: last.x + 6, y: last.y + 4 }, sr.label + " " + compact(last.v)));
-    });
-    svg.appendChild(labels);
-    var cross = s("line", { class: "cross", y1: T, y2: H - B, visibility: "hidden" });
-    svg.appendChild(cross);
-    var tip = h("div", { class: "tip", hidden: true });
-    // The hit target is the whole plot, not the 2px line.
-    svg.appendChild(s("rect", { x: L, y: T, width: W - L - R, height: H - T - B, fill: "transparent" }));
-    svg.addEventListener("pointermove", function (e) {
-      var box = svg.getBoundingClientRect();
-      var px = (e.clientX - box.left) / box.width * W;
-      var best = 0;
-      for (var i = 1; i < times.length; i++) if (Math.abs(x(times[i]) - px) < Math.abs(x(times[best]) - px)) best = i;
-      var cx = x(times[best]);
-      cross.setAttribute("x1", cx); cross.setAttribute("x2", cx); cross.setAttribute("visibility", "visible");
-      tip.replaceChildren();
-      append(tip, [h("div", { class: "muted", text: new Date(times[best]).toLocaleString() }),
-        series.map(function (sr) { return h("div", null, h("span", { class: "swatch", style: "background:var(" + sr.color + ")" }), sr.label + ": " + fmt(points[best][sr.key])); })]);
-      tip.hidden = false;
-      var left = cx / W * box.width;
-      tip.style.left = Math.min(Math.max(0, left + 10), box.width - 150) + "px";
-      tip.style.top = "24px";
-    });
-    svg.addEventListener("pointerleave", function () { cross.setAttribute("visibility", "hidden"); tip.hidden = true; });
-    wrap.appendChild(svg);
-    wrap.appendChild(tip);
-    // The same numbers as a table, for screen readers and exact values.
-    wrap.appendChild(h("details", null, h("summary", { class: "muted", text: "Show as table" }),
-      h("div", { class: "table-wrap" }, h("table", null,
-        h("thead", null, h("tr", null, h("th", { text: "Captured" }), series.map(function (sr) { return h("th", { class: "num", text: sr.label }); }))),
-        h("tbody", null, points.slice().reverse().map(function (p) {
-          return h("tr", null, h("td", { text: localTime(p.capturedAtUtc) }), series.map(function (sr) { return h("td", { class: "num", text: fmt(p[sr.key]) }); }));
-        }))))));
-    return wrap;
-  }
-  function niceMax(v) {
-    if (v <= 0) return 1;
-    var p = Math.pow(10, Math.floor(Math.log10(v)));
-    var steps = [1, 2, 2.5, 5, 10];
-    for (var i = 0; i < steps.length; i++) if (steps[i] * p >= v) return steps[i] * p;
-    return 10 * p;
-  }
-  function compact(v) { return v >= 10000 ? Math.round(v / 1000) + "k" : v >= 1000 ? (v / 1000).toFixed(1).replace(/\.0$/, "") + "k" : String(Math.round(v)); }
 
   function cardsOf(deck) {
     if (!deck.cardsJson) return null;
@@ -1651,18 +1702,15 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
       tile("Gems", fmt(a.gems)), tile("Gold", fmt(a.gold)),
       tile("Wildcards R / M", fmt(a.wcRare) + " / " + fmt(a.wcMythic)),
       tile("Vault", a.vaultProgress == null ? "—" : a.vaultProgress.toFixed(1) + "%"),
-      tile("Boosters", a.snapshotId == null ? "—" : fmt(a.boosterTotal))));
+      tile("Boosters", a.snapshotId == null ? "—" : fmt(a.boosterTotal)),
+      tokenTile(d.tokens, "draft", "Draft tokens"),
+      tokenTile(d.tokens, "event", "Event tokens")));
+    var otherTokens = (d.tokens || []).filter(function (x) { return x.kind === "other"; });
+    if (otherTokens.length) view.appendChild(h("p", { class: "muted", text: "Other tokens: " + otherTokens.map(function (x) { return x.label + " ×" + fmt(x.count); }).join(" · ") }));
 
-    var boosters = d.boosters.length
-      ? h("div", { class: "table-wrap" }, h("table", null, h("thead", null, h("tr", null, h("th", { text: "Set" }), h("th", { class: "num", text: "Count" }))),
-        h("tbody", null, d.boosters.map(function (b) { return h("tr", null, h("td", { text: b.setCode }), h("td", { class: "num", text: fmt(b.count) })); }))))
-      : h("p", { class: "muted", text: "No boosters in the latest snapshot." });
-    // Rank, common and uncommon wildcards, and gems and gold over time are still recorded, just not shown:
-    // the owner tracks rares, mythics and boosters only.
-    view.appendChild(h("div", { class: "grid-2" },
-      h("section", { class: "card" }, h("h3", { text: "Rare and mythic wildcards" }),
-        lineChart("Rare and mythic wildcards over time", d.snapshots, [{ key: "wcRare", label: "Rare", color: "--series-1" }, { key: "wcMythic", label: "Mythic", color: "--series-2" }])),
-      h("section", { class: "card" }, h("h3", { text: "Boosters" }), boosters)));
+    // Rank, wildcard history, gems and gold over time and the booster list are still recorded, just not shown:
+    // on this page the owner wants the cards themselves.
+    view.appendChild(renderGallery(d));
 
     var decks = h("section", { class: "card" }, h("h3", { text: "Custom decks (" + d.customDecks.length + ")" }));
     if (!d.customDecks.length) decks.appendChild(h("p", { class: "muted", text: "No custom decks." }));
@@ -1999,6 +2047,7 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
     CFG.themes.forEach(function (t) { cmds.push({ id: "theme-" + t.id, group: "Settings", label: "Theme: " + t.label + (display.theme === t.id ? " (in use)" : ""), disabled: display.theme === t.id, run: function () { chooseTheme(t.id); } }); });
     CFG.densities.forEach(function (d) { cmds.push({ id: "density-" + d.id, group: "Settings", label: "Density: " + d.label + (display.density === d.id ? " (in use)" : ""), disabled: display.density === d.id, run: function () { chooseDensity(d.id); } }); });
     CFG.textSizes.forEach(function (t) { cmds.push({ id: "text-" + t.id, group: "Settings", label: "Text size: " + t.label + (display.text === t.id ? " (in use)" : ""), disabled: display.text === t.id, run: function () { chooseText(t.id); } }); });
+    cmds.push({ id: "cardimages-download", group: "Cards", label: "Download missing card images", disabled: READ_ONLY || (state.imageStatus && state.imageStatus.running), run: startImageDownload });
     cmds.push({ id: "carddb-setup", group: "Cards", label: "Set up card names (CardDbPath)", disabled: READ_ONLY, run: openCardDbSetup });
     cmds.push({ id: "game-launch", group: "Game", label: state.game && state.game.running ? "Start MTGA (already running)" : "Start MTGA",
       disabled: READ_ONLY || !state.game || state.game.running || !state.game.canLaunch, run: launchGame });

@@ -68,16 +68,23 @@ public sealed record AccountDetail(
     IReadOnlyList<RankRow> Ranks,
     IReadOnlyDictionary<int, string> CardNames,
     IReadOnlyList<OwnedCard> KnownCards,
-    bool CardRarityKnown);
+    bool CardRarityKnown,
+    IReadOnlyList<TokenCount>? Tokens = null);
+
+/// <summary>One kind of token from the latest inventory: Kind is "draft", "event" or "other".</summary>
+public sealed record TokenCount(string Key, string Label, string Kind, int Count);
+
+/// <summary>An account on a token leaderboard.</summary>
+public sealed record TokenLeader(string Email, string? DisplayName, int Count, string? LastLoginUtc);
 
 /// <summary>A card known to be owned (from saved decks), with what the card database says about it.</summary>
 public sealed record OwnedCard(int CardId, int Copies, int Decks, IReadOnlyList<string> DeckNames, string? Name, string? Rarity, string? Set,
-    string? Types = null, string? Cost = null, string? Colors = null, bool Alchemy = false);
+    string? Types = null, string? Cost = null, string? Colors = null, bool Alchemy = false, string? Image = null);
 
 public sealed record CardHolder(string? Email, string DisplayName, int Copies);
 
 public sealed record CardAcrossAccounts(int CardId, string? Name, string? Rarity, string? Set, IReadOnlyList<CardHolder> Holders,
-    string? Types = null, string? Cost = null, string? Colors = null, bool Alchemy = false);
+    string? Types = null, string? Cost = null, string? Colors = null, bool Alchemy = false, string? Image = null);
 
 public sealed record CardsReport(
     bool RarityKnown, string? CardDbStatus, int MinCopies, IReadOnlyList<string> Rarities,
@@ -98,7 +105,9 @@ public sealed record SetTotal
 public sealed record Totals(
     long Gems, long Gold, long WcCommon, long WcUncommon, long WcRare, long WcMythic,
     IReadOnlyList<SetTotal> BoostersBySet, IReadOnlyDictionary<string, int> LoginBuckets,
-    int Accounts, int Players, IReadOnlyList<Leader> MostBoosters, IReadOnlyList<Leader> MostRareWildcards);
+    int Accounts, int Players, IReadOnlyList<Leader> MostBoosters, IReadOnlyList<Leader> MostRareWildcards,
+    IReadOnlyList<TokenLeader>? MostDraftTokens = null, IReadOnlyList<TokenLeader>? MostEventTokens = null,
+    IReadOnlyList<TokenCount>? TokenTotals = null);
 
 /// <summary>An account on a Totals leaderboard, with the numbers both boards show.</summary>
 public sealed record Leader(string Email, string? DisplayName, long Boosters, long WcRare, long WcMythic, string? LastLoginUtc);
@@ -136,7 +145,8 @@ public sealed record InventoryDrop(
     long GemsChange, long GoldChange, long RareChange, long MythicChange, IReadOnlyList<string> Reasons);
 
 /// <summary>Read side of the API. Every query is plain SQL against the schema in <see cref="Database"/>.</summary>
-public sealed partial class Queries(Database db, Cards.CardNames? cards = null, ExceptionStore? exceptions = null, MtgaDashOptions? options = null)
+public sealed partial class Queries(Database db, Cards.CardNames? cards = null, ExceptionStore? exceptions = null, MtgaDashOptions? options = null,
+    CardImageStore? images = null)
 {
     public IReadOnlyList<AccountLatest> Accounts(string? search = null, string? status = null, bool? stale = null, int staleDays = 30, DateTime? nowUtc = null)
     {
@@ -186,8 +196,13 @@ public sealed partial class Queries(Database db, Cards.CardNames? cards = null, 
         var saved = name is null ? [] : SavedDecks(c, name).ToList();
         var (canonical, info) = Canonical(saved);
         var known = KnownCollection.For(saved, canonical);
-        var owned = known.Select(k => ToOwned(k, info)).ToList();
-        return new AccountDetail(a, snaps, boosters, custom, decks.Count - custom.Count, ranks, names, owned, cards?.HasRarity ?? false);
+        var owned = known.Select(k =>
+        {
+            var o = ToOwned(k, info);
+            return o with { Image = ImageUrl(o.Name) };
+        }).ToList();
+        var tokensJson = a.SnapshotId is { } tsid ? c.ExecuteScalar<string?>("SELECT CustomTokensJson FROM Snapshots WHERE Id = @tsid", new { tsid }) : null;
+        return new AccountDetail(a, snaps, boosters, custom, decks.Count - custom.Count, ranks, names, owned, cards?.HasRarity ?? false, Tokens(tokensJson));
     }
 
     private static OwnedCard ToOwned(KnownCard k, IReadOnlyDictionary<int, CardInfo> info)
@@ -249,6 +264,14 @@ public sealed partial class Queries(Database db, Cards.CardNames? cards = null, 
         return (Map, info);
     }
 
+    /// <summary>
+    /// The cards worth an image: rares and mythics some account holds at 3 or more copies, by name. Cards the
+    /// card database cannot name are left out, since an image is found by name.
+    /// </summary>
+    public IReadOnlyList<string> ImageWanted() =>
+        Cards(minCopies: 3).Cards.Where(c => c.Name is not null && (c.Rarity is "rare" or "mythic"))
+            .Select(c => c.Name!).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToList();
+
     /// <summary>Every account holding at least one copy of a card (any printing), most copies first.</summary>
     public IReadOnlyList<CardHolder> CardHolders(int cardId)
     {
@@ -294,7 +317,7 @@ public sealed partial class Queries(Database db, Cards.CardNames? cards = null, 
                 var i = info.GetValueOrDefault(kv.Key);
                 return new CardAcrossAccounts(kv.Key, i?.Name, i?.Rarity, i?.Set,
                     kv.Value.OrderByDescending(h => h.Copies).ThenBy(h => h.DisplayName, StringComparer.OrdinalIgnoreCase).ToList(),
-                    i?.Types, i?.Cost, i?.Colors, i?.Alchemy ?? false);
+                    i?.Types, i?.Cost, i?.Colors, i?.Alchemy ?? false, ImageUrl(i?.Name));
             })
             .OrderByDescending(x => x.Holders.Count).ThenBy(x => x.Name ?? "~").ThenBy(x => x.CardId)
             .ToList();
@@ -361,10 +384,72 @@ public sealed partial class Queries(Database db, Cards.CardNames? cards = null, 
         static Leader L(AccountLatest a) => new(a.Email, a.DisplayName, a.BoosterTotal, a.WcRare ?? 0, a.WcMythic ?? 0, a.LastLoginUtc);
         var mostBoosters = accountsLatest.Where(a => a.BoosterTotal > 0).OrderByDescending(a => a.BoosterTotal).ThenByDescending(a => a.WcRare).Take(LeaderCount).Select(L).ToList();
         var mostRares = accountsLatest.Where(a => (a.WcRare ?? 0) > 0).OrderByDescending(a => a.WcRare).ThenByDescending(a => a.WcMythic).Take(LeaderCount).Select(L).ToList();
-        return new Totals(sums.Item1, sums.Item2, sums.Item3, sums.Item4, sums.Item5, sums.Item6, sets, buckets, logins.Count, players, mostBoosters, mostRares);
+        // Tokens from each account's latest inventory; leaderboards only for the kinds some account has.
+        var tokenRows = c.Query<TokenRow>("""
+            SELECT v.Email, v.DisplayName, v.LastLoginUtc, s.CustomTokensJson
+            FROM vAccountLatest v JOIN Snapshots s ON s.Id = v.SnapshotId WHERE s.CustomTokensJson IS NOT NULL
+            """).Select(r => (Row: r, Tokens: Tokens(r.CustomTokensJson))).ToList();
+        List<TokenLeader> Board(string kind) => tokenRows
+            .Select(r => new TokenLeader(r.Row.Email, r.Row.DisplayName, r.Tokens.Where(t => t.Kind == kind).Sum(t => t.Count), r.Row.LastLoginUtc))
+            .Where(l => l.Count > 0).OrderByDescending(l => l.Count).ThenBy(l => l.Email, StringComparer.OrdinalIgnoreCase).Take(LeaderCount).ToList();
+        var tokenTotals = tokenRows.SelectMany(r => r.Tokens).GroupBy(t => t.Key)
+            .Select(g => g.First() with { Count = g.Sum(t => t.Count) }).OrderBy(t => t.Kind).ThenBy(t => t.Label).ToList();
+        return new Totals(sums.Item1, sums.Item2, sums.Item3, sums.Item4, sums.Item5, sums.Item6, sets, buckets, logins.Count, players, mostBoosters, mostRares,
+            Board("draft"), Board("event"), tokenTotals);
     }
 
     public const int LeaderCount = 20;
+
+    /// <summary>Only a card with a downloaded image gets a URL; the page draws a placeholder for the rest.</summary>
+    private string? ImageUrl(string? name) =>
+        name is not null && images?.Has(name) == true ? "/card-images/" + Uri.EscapeDataString(CardImageStore.KeyFor(name)) + ".jpg" : null;
+
+    /// <summary>Property-mapped like the other rows read from the view (see AccountLatest).</summary>
+    private sealed class TokenRow
+    {
+        public string Email { get; set; } = "";
+        public string? DisplayName { get; set; }
+        public string? LastLoginUtc { get; set; }
+        public string? CustomTokensJson { get; set; }
+    }
+
+    /// <summary>
+    /// The inventory's CustomTokens, counts above zero only. MTGA's token names are not documented, so the kind
+    /// comes from the name: "draft" or "event" in it (any case) makes it one of those; the rest are listed as
+    /// they are, so an unrecognized draft or event token still shows and its name can be added here.
+    /// </summary>
+    public static IReadOnlyList<TokenCount> Tokens(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return [];
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object) return [];
+            return doc.RootElement.EnumerateObject()
+                .Select(p => (p.Name, Count: p.Value.ValueKind == JsonValueKind.Number && p.Value.TryGetInt32(out var n) ? n : 0))
+                .Where(t => t.Count > 0)
+                .Select(t => new TokenCount(t.Name, TokenLabel(t.Name), TokenKind(t.Name), t.Count))
+                .OrderBy(t => t.Kind).ThenBy(t => t.Label)
+                .ToList();
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
+    public static string TokenKind(string key) =>
+        key.Contains("draft", StringComparison.OrdinalIgnoreCase) ? "draft"
+        : key.Contains("event", StringComparison.OrdinalIgnoreCase) ? "event"
+        : "other";
+
+    /// <summary>"Token_DraftPremier" → "Draft Premier": the prefix dropped, words split at capitals and underscores.</summary>
+    public static string TokenLabel(string key)
+    {
+        var k = System.Text.RegularExpressions.Regex.Replace(key, "^(Token_?|CustomToken_?)", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        k = System.Text.RegularExpressions.Regex.Replace(k.Replace('_', ' '), "(?<=[a-z0-9])(?=[A-Z])", " ");
+        return string.IsNullOrWhiteSpace(k) ? key : k.Trim();
+    }
 
     public static string Bucket(string? lastLoginUtc, DateTime nowUtc)
     {

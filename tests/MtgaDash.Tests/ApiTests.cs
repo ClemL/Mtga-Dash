@@ -39,6 +39,7 @@ public sealed class ApiTests
             "--MtgaDash:PollSeconds=1",
             // CI has a desktop: without this every test run would open a browser.
             "--MtgaDash:OpenBrowser=false",
+            "--MtgaDash:AutoDownloadCardImages=false",
             "--Logging:LogLevel:Default=Warning",
         ]);
         await _app.StartAsync();
@@ -188,6 +189,18 @@ public sealed class ApiTests
         var lookup = await _http.GetFromJsonAsync<JsonElement>("/api/carddb/lookup?ids=92275,abc");
         Assert.AreEqual(JsonValueKind.Null, lookup.GetProperty("92275").ValueKind);
         Assert.IsFalse(lookup.TryGetProperty("abc", out _));
+    }
+
+    [TestMethod]
+    public async Task Card_images_status_missing_list_and_file_serving()
+    {
+        var status = await _http.GetFromJsonAsync<JsonElement>("/api/cardimages");
+        StringAssert.EndsWith(status.GetProperty("folder").GetString(), "card-images");
+        Assert.AreEqual(0, status.GetProperty("wanted").GetInt32(), "no card database here, so no card can be named");
+        Assert.AreEqual("", await _http.GetStringAsync("/api/cardimages/missing"));
+        Assert.AreEqual(HttpStatusCode.NotFound, (await _http.GetAsync("/card-images/Nothing.jpg")).StatusCode);
+        Assert.AreEqual(HttpStatusCode.NotFound, (await _http.GetAsync("/card-images/..%2Fmtga.db.jpg")).StatusCode);
+        Assert.AreEqual(HttpStatusCode.Forbidden, (await _http.PostAsync("/api/cardimages/download", null)).StatusCode);
     }
 
     [TestMethod]

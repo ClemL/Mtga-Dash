@@ -45,7 +45,9 @@ src/MtgaDash/
   Accounts/     AccountMatcher (pure), AccountsCsv, AccountExceptions (compiled overrides),
                 ExceptionStore (Review-tab overrides in account-exceptions.json)
   Cards/        CardNames: optional names, rarity and set from MTGA's own SQLite card DB, schema found at
-                runtime; KnownCollection (pure): cards owned, as a minimum, from saved deck lists
+                runtime; KnownCollection (pure): cards owned, as a minimum, from saved deck lists;
+                CardImageStore: newest-art images from Scryfall, by card name, in card-images/ (with
+                not-found.json and last-run.json, the Status tab's record of the latest download)
   Game/         GameLauncher: starts MTGA at startup (LaunchGame) or from the Status tab, never twice
   Web/          PageRenderer (fills index.html placeholders), StaticExporter, DisplayOptions, BuildInfo,
                 StartPage (writes the address and opens the browser once listening)
@@ -129,6 +131,11 @@ positional record over one throws on an empty database: use settable properties 
 `GameLauncher` refuses when `Environment.UserInteractive` is false; the logon task's `-Interactive` switch is
 the fix. Tests replace `GameLauncher.Start` and `StartPage.Open`, and `ApiTests` pass `OpenBrowser=false`:
 never launch a real process or browser from a test (CI has a desktop).
+
+**Card images come from Scryfall, which has rules.** Every API call carries the `MtgaDash/<version>`
+User-Agent and an Accept header (`CardImageStore.CreateClient`) and waits `RequestGap` (100 ms). Tests use
+`FakeScryfall`: never call the real API from a test. `Program.cs` also runs as a command-line tool with
+`--download-card-images`.
 
 **`nuget.config` must keep `<clear />`.** The owner's global config has a private Azure Artifacts feed that
 answers 401 and breaks restores.

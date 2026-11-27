@@ -63,6 +63,11 @@ public sealed class EmptyDatabaseTests
         Assert.IsNull(q.Account("nobody@example.com"));
         Assert.AreEqual(0, q.CardHolders(1).Count);
         Assert.AreEqual(9, q.DeckNameLists().Hidden.Count, "the nine starter names are hidden from the start");
+        var options = new MtgaDashOptions();
+        var report = new MtgaDash.Usage.UsageReport(t.Db, options, q, new MtgaDash.Ingestion.StatusTracker(t.Db, options), new MtgaDash.Ingestion.ActivityLog(t.Db),
+            new MtgaDash.Cards.CardImageStore(t.File("img"), "https://scryfall.test", new HttpClient(new FakeScryfall()), Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance),
+            new MtgaDash.Usage.RequestTimings(), () => [], () => t.File("export"), Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance).Build(null);
+        StringAssert.Contains(report, "No usage recorded yet");
 
         // An account with no decks: the deck query returns nothing, and must still map.
         using (var c = t.Db.Open())

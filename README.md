@@ -82,6 +82,8 @@ Any setting can be overridden on the command line, e.g. `--MtgaDash:Port=5090`.
 | `LaunchGame` | `true` | Start MTGA when the dashboard starts, unless it is already running; see below. |
 | `GamePath` | `C:\Program Files\Wizards of the Coast\MTGA\MTGA.exe` | The game to start, or a launcher URI such as `steam://rungameid/2141910`. |
 | `CardImageFolder` | *(empty)* | Where card images are kept; empty means `card-images` beside the database. |
+| `TrackUsage` | `true` | Record what you do on the page for the usage report; see below. |
+| `UsageRetentionDays` | `90` | Usage events older than this are deleted. |
 | `ExceptionsPath` | *(empty)* | Where Review-tab mappings are saved; empty means `account-exceptions.json` beside the database. |
 
 ### How ingestion works
@@ -382,6 +384,34 @@ With `ExportFolder` set, 30 s after data changes the app writes:
 
 The full paths are printed after each export. **Write the static export** in the command palette (or
 `POST /api/export`) exports immediately, into `export` beside the data folder if `ExportFolder` is empty.
+
+## Usage report for an LLM
+
+**Settings → Usage report for an LLM** (or `Ctrl+K` → "Usage report for an LLM") writes a Markdown file to
+`<export folder>\llm\mtgadash_usage_yyyyMMdd_HHmm.md`, shows its full path, and offers Copy report and Download.
+Paste it into an LLM and ask what to build or change next. It contains:
+
+- **A brief for the LLM:** what MtgaDash is, its tabs, and what to look for.
+- **The data:** account, display-name, snapshot and deck counts; match states; logins in the last 1, 7 and 30
+  days; status values; cards at 3+ copies and image coverage.
+- **Settings:** values, with paths shown only as set or not, and whether they exist.
+- **What you do on the page** over `UsageRetentionDays`:
+  - sessions and active time;
+  - each tab's opens and active minutes;
+  - buttons clicked, palette commands, menu and checkbox choices, previews looked at;
+  - palette commands never run;
+  - theme, density, text size, screen size and pointer type;
+  - events by hour of day;
+  - page errors.
+- **Ingestion health:** poll time, log files, current issues, the Activity feed's counts, and every MTGA message
+  with whether the parser reads it.
+- **Server timings:** requests, mean and maximum time per endpoint since the app started.
+- **The last 25 changelog entries.**
+
+**What is never recorded or reported:** typed text (only that a filter was used), emails, display names
+(`Name#12345`), notes, deck and card names (link buttons are skipped), and file paths. Everything is redacted
+once in the page and again on the server. The events stay in the database on this PC. To stop recording, set
+`"TrackUsage": false`; the report then covers only the data and settings.
 
 ## Command palette and shortcuts
 

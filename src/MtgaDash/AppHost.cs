@@ -57,6 +57,12 @@ public static class AppHost
         builder.Services.AddSingleton<PageRenderer>();
         builder.Services.AddSingleton<StartPage>();
         builder.Services.AddSingleton<StaticExporter>();
+        builder.Services.AddSingleton<Usage.UsageLog>();
+        builder.Services.AddSingleton<Usage.RequestTimings>();
+        builder.Services.AddSingleton(sp => new Usage.UsageReport(db, options, sp.GetRequiredService<Queries>(),
+            sp.GetRequiredService<StatusTracker>(), sp.GetRequiredService<ActivityLog>(), sp.GetRequiredService<CardImageStore>(),
+            sp.GetRequiredService<Usage.RequestTimings>(), () => sp.GetRequiredService<PageRenderer>().ReadChangelog(),
+            () => sp.GetRequiredService<StaticExporter>().Folder, sp.GetRequiredService<ILogger<Usage.UsageReport>>()));
         builder.Services.AddSingleton<IngestionService>();
         builder.Services.AddSingleton<CardImageAutoDownload>();
         builder.Services.AddHostedService(sp => sp.GetRequiredService<CardImageAutoDownload>());
@@ -71,6 +77,7 @@ public static class AppHost
             db.Path, MtgaDashOptions.Resolve(options.LogFolder),
             options.WatchLiveLog ? MtgaDashOptions.Resolve(options.LiveLogPath) : "(off)", ExceptionsPath(options));
 
+        app.Use(Usage.RequestTimings.Middleware);
         MapEndpoints(app, options);
         // app.Urls holds the real address only once Kestrel is listening (port 0 in tests picks one then).
         app.Lifetime.ApplicationStarted.Register(() => app.Services.GetRequiredService<StartPage>().Announce(app.Urls));
@@ -189,6 +196,12 @@ public static class AppHost
         });
         write.MapPost("/cardimages/download", (Queries q, CardImageStore images) =>
             Results.Ok(new { started = images.StartDownload(q.ImageWanted().ToList()) }));
+        write.MapPost("/usage", (Usage.UsageEventIn[]? events, Usage.UsageLog log) => Results.Ok(new { stored = log.Add(events) }));
+        write.MapPost("/usage/report", (Usage.UsageReportRequest? request, Usage.UsageReport report) =>
+        {
+            var (path, markdown) = report.Write(request);
+            return Results.Ok(new { path, markdown });
+        });
         write.MapPost("/reimport", (IngestionService s) => Results.Ok(new { imported = s.ImportAccounts() }));
         write.MapPost("/export", (StaticExporter e) =>
         {

@@ -43,3 +43,4 @@
 2026-11-27T07:39:00Z - MTGA starts with the dashboard by default, unless it is already running
 2026-11-27T07:39:00Z - Hovering a card on the Cards tab or in an account's tables shows it at full size
 2026-11-27T07:39:00Z - The Accounts table opens sorted by last login, newest first; hovering a row shows up to 8 of its 3+ copy rares and mythics
+2026-11-27T15:10:00Z - Settings has a usage report for an LLM: how you use each tab, what you click, errors and timings, as Markdown with no emails or names

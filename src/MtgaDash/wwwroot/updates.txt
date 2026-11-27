@@ -40,3 +40,6 @@
 2026-11-23T22:21:00Z - The Status tab shows the last card image download: when, what started it, and the cards it saved, could not find or failed on
 2026-11-23T22:21:00Z - Card thumbnails also appear in the Cards tab's By account view and in each account's Known rares table
 2026-11-23T23:13:00Z - Card image downloads search Scryfall more slowly, honor its Retry-After, and pause for 30 minutes instead of continuing when it says too many requests
+2026-11-27T07:39:00Z - MTGA starts with the dashboard by default, unless it is already running
+2026-11-27T07:39:00Z - Hovering a card on the Cards tab or in an account's tables shows it at full size
+2026-11-27T07:39:00Z - The Accounts table opens sorted by last login, newest first; hovering a row shows up to 8 of its 3+ copy rares and mythics

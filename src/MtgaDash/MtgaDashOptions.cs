@@ -67,8 +67,8 @@ public sealed class MtgaDashOptions
     /// <summary>The page opened at startup and written to the console; the Activity tab by default.</summary>
     public string StartPage { get; set; } = "/#/activity";
 
-    /// <summary>Start MTGA when the dashboard starts, unless it is already running.</summary>
-    public bool LaunchGame { get; set; }
+    /// <summary>Start MTGA when the dashboard starts, unless it is already running. On unless turned off.</summary>
+    public bool LaunchGame { get; set; } = true;
 
     /// <summary>
     /// The game to start: MTGA.exe for the standalone install, or a launcher URI such as

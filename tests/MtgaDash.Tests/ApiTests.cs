@@ -40,6 +40,8 @@ public sealed class ApiTests
             // CI has a desktop: without this every test run would open a browser.
             "--MtgaDash:OpenBrowser=false",
             "--MtgaDash:AutoDownloadCardImages=false",
+            // On by default, and on the owner's PC MTGA is installed: a test run must never start the game.
+            "--MtgaDash:LaunchGame=false",
             "--Logging:LogLevel:Default=Warning",
         ]);
         await _app.StartAsync();

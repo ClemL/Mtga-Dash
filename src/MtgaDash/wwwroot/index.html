@@ -326,6 +326,8 @@ details > summary { cursor: pointer; padding: var(--cell-py) 0; }
 .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .thumb-ph { display: grid; place-items: center; width: 100%; height: 100%; box-sizing: border-box; border: 1px dashed var(--border-strong); background: var(--panel-2); color: var(--fg-dim); font-size: calc(11px * var(--text-scale)); }
 .thumb-chips { line-height: 1.2; }
+.report-preview { width: 100%; box-sizing: border-box; font-size: calc(12px * var(--text-scale)); }
+.block { display: block; margin-top: var(--gap); }
 /* Hover previews: fixed to the window, above everything, and never the target of the pointer. */
 .hover-preview { position: fixed; z-index: 60; pointer-events: none; padding: var(--gap); background: var(--panel); border: 1px solid var(--border-strong); border-radius: 10px; box-shadow: var(--shadow); }
 .hover-preview[hidden] { display: none; }
@@ -616,7 +618,26 @@ var MtgaPure = (function () {
     return Math.max(60, Math.floor(Math.min(488, byWidth, byHeight)));
   }
 
+  /**
+   * A UI label safe to record for the usage report: no emails or display names, 40 characters at most. Digits
+   * become # in button labels (counts change); a menu's chosen value keeps them (keepDigits), since "4" is the choice.
+   */
+  function usageLabel(text, keepDigits) {
+    var t = String(text == null ? "" : text)
+      .replace(/[^\s@]+@[^\s@]+/g, "<email>")
+      .replace(/[^\s#]+#\d{1,6}\b/g, "<player>");
+    if (!keepDigits) t = t.replace(/\d+/g, "#");
+    return t.replace(/\s+/g, " ").trim().slice(0, 40);
+  }
+
+  /** An API path as a pattern: no query string, and any segment that is not a plain lowercase word becomes {value}. */
+  function routePattern(path) {
+    return String(path == null ? "" : path).split("?")[0].split("/")
+      .map(function (seg) { return seg === "" || /^[a-z]+$/.test(seg) ? seg : "{value}"; }).join("/");
+  }
+
   return {
+    usageLabel: usageLabel, routePattern: routePattern,
     topCards: topCards, previewCardWidth: previewCardWidth,
     parseChangelog: parseChangelog, filterCommands: filterCommands, accountText: accountText,
     matchesAccount: matchesAccount, snippet: snippet, relativeTime: relativeTime, loginClass: loginClass, isStale: isStale,
@@ -732,7 +753,7 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
 
   function api(path) {
     return fetch(path, { headers: { Accept: "application/json" } }).then(function (r) {
-      if (!r.ok) throw new Error(path + " → " + r.status);
+      if (!r.ok) { track("error", "GET " + P.routePattern(path), "HTTP " + r.status); throw new Error(path + " → " + r.status); }
       return r.json();
     });
   }
@@ -796,6 +817,7 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
   }
   function onRoute() {
     state.route = parseRoute();
+    track("view", state.route.view);
     if (state.route.view === "account") {
       state.selectedEmail = state.route.email;
       state.detail = undefined;
@@ -1367,6 +1389,9 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
   var CAN_HOVER = !!(window.matchMedia && window.matchMedia("(hover: hover) and (pointer: fine)").matches);
   function hidePreview() {
     clearTimeout(hoverState.timer);
+    // A preview passed over on the way to another row is not one that was looked at.
+    if (hoverState.shownAt && Date.now() - hoverState.shownAt >= 800) track("hover", hoverState.kind, Math.round((Date.now() - hoverState.shownAt) / 1000) + " s");
+    hoverState.shownAt = 0;
     hoverState.owner = null;
     if (hoverState.el) hoverState.el.hidden = true;
   }
@@ -1379,7 +1404,7 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
     el.style.top = Math.max(m, Math.min(hoverState.y - ht / 2, vh - ht - m)) + "px";
   }
   // build() runs when the preview opens, so the content reflects the data at that moment.
-  function hoverPreview(target, delay, build) {
+  function hoverPreview(target, delay, build, kind) {
     if (!CAN_HOVER || READ_ONLY) return target;
     target.addEventListener("mouseenter", function (e) {
       clearTimeout(hoverState.timer);
@@ -1396,6 +1421,7 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
         }
         hoverState.el.replaceChildren(content);
         hoverState.el.hidden = false;
+        hoverState.shownAt = Date.now(); hoverState.kind = kind;
         placePreview();
         // Images not yet in the cache change the size once loaded.
         hoverState.el.querySelectorAll("img").forEach(function (img) { if (!img.complete) img.addEventListener("load", placePreview, { once: true }); });
@@ -1412,7 +1438,7 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
       if (!k.image) return null;
       var w = P.previewCardWidth(1, document.documentElement.clientWidth, window.innerHeight, PREVIEW_CHROME);
       return h("img", { class: "preview-card", src: k.image, alt: "", style: "width:" + w + "px" });
-    });
+    }, "card");
   }
   // Up to 8 of an account's 3+ copy rares and mythics, 4-ofs first, as large as the window allows.
   function accountHover(target, a) {
@@ -1430,7 +1456,7 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
               e.card.image ? h("img", { class: "preview-card", src: e.card.image, alt: "" }) : cardPlaceholder(e.card),
               h("span", { class: "copies-badge" + (e.copies >= 4 ? " four" : ""), text: "×" + e.copies }));
           })));
-    });
+    }, "account");
   }
   function rarityPill(r) { return r ? h("span", { class: "pill rarity-" + r, text: r }) : h("span", { class: "muted", text: "?" }); }
   function cardDbNotice(rarityKnown, status) {
@@ -1876,6 +1902,7 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
       body: body ? JSON.stringify(body) : undefined,
     }).then(function (r) {
       if (r.ok) return r.status === 204 ? null : r.json();
+      track("error", method + " " + P.routePattern(path), "HTTP " + r.status);
       return r.json().catch(function () { return {}; }).then(function (p) { throw new Error(p.detail || p.title || ("HTTP " + r.status)); });
     });
   }
@@ -1883,6 +1910,83 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
     if (READ_ONLY) return;
     mutate("POST", "/api/reimport").then(function () { return load(); }, function (e) { alert("Re-import failed: " + e.message); });
   }
+  // ---- Usage events: what is done on the page, for the usage report. Recorded: views, palette commands, button
+  // labels, menu and checkbox choices, previews, errors. Never recorded: typed text, emails, display names, notes,
+  // deck or card names (link buttons carry those, so they are skipped). Stored on this PC only.
+  var usage = { session: Math.random().toString(36).slice(2, 10), queue: [], timer: 0 };
+  function track(kind, name, value) {
+    if (READ_ONLY || !name) return;
+    usage.queue.push({ at: new Date().toISOString(), session: usage.session, kind: kind, name: String(name).slice(0, 80), value: value == null ? null : String(value).slice(0, 80) });
+    if (usage.queue.length >= 50) flushUsage();
+    else if (!usage.timer) usage.timer = setTimeout(flushUsage, 15000);
+  }
+  // keepalive lets the last batch out while the tab closes; fetch, not sendBeacon, because the header is required.
+  function flushUsage(keepalive) {
+    clearTimeout(usage.timer); usage.timer = 0;
+    if (READ_ONLY || !usage.queue.length) return Promise.resolve();
+    var batch = usage.queue.splice(0, 200);
+    return fetch("/api/usage", { method: "POST", keepalive: !!keepalive, headers: { "X-MtgaDash": "1", "Content-Type": "application/json" }, body: JSON.stringify(batch) })
+      .then(function () {}, function () {});
+  }
+  function startUsageTracking() {
+    if (READ_ONLY) return;
+    var w = document.documentElement.clientWidth;
+    track("load", "screen", w < 600 ? "phone (<600 px)" : w < 1200 ? "narrow (600-1199 px)" : w < 1800 ? "desktop (1200-1799 px)" : "wide (1800+ px)");
+    track("load", "pointer", CAN_HOVER ? "mouse" : "touch");
+    track("display", "theme", display.theme); track("display", "density", display.density); track("display", "text size", display.text);
+    track("view", state.route.view);
+    document.addEventListener("click", function (e) {
+      var b = e.target.closest && e.target.closest("button");
+      if (!b || b.closest(".palette") || b.matches(".link-btn, .thumb, .gallery-open")) return;
+      var label = P.usageLabel(b.getAttribute("aria-label") || b.textContent);
+      if (label) track("click", label, state.route.view);
+    }, true);
+    document.addEventListener("change", function (e) {
+      var el = e.target;
+      if (!el || !el.matches) return;
+      var name = P.usageLabel(el.getAttribute("aria-label") || el.name || el.id);
+      if (el.matches("input[type=search], input[type=text], input:not([type]), textarea")) track("search", name, state.route.view);
+      else if (el.matches("input[type=checkbox]")) track("change", name, el.checked ? "on" : "off");
+      else if (el.matches("select, input[type=radio]")) track("change", name, P.usageLabel(el.value, true));
+    }, true);
+    window.addEventListener("error", function (e) { track("error", "script", P.usageLabel(e.message)); });
+    window.addEventListener("unhandledrejection", function (e) { track("error", "promise", P.usageLabel(e.reason && e.reason.message || e.reason)); });
+    document.addEventListener("visibilitychange", function () { if (document.visibilityState === "hidden") flushUsage(true); });
+    window.addEventListener("pagehide", function () { flushUsage(true); });
+  }
+
+  function exportUsageReport() {
+    if (READ_ONLY) return;
+    var body = h("div", { class: "setup" }, h("p", { class: "muted", text: "Writing the report…" }));
+    openDialog("Usage report for an LLM", body);
+    flushUsage().then(function () {
+      return mutate("POST", "/api/usage/report", {
+        // Fixed commands only: some ids name an account.
+        commands: buildCommands().map(function (c) { return c.id; }).filter(function (id) { return /^[a-z0-9-]+$/.test(id); }),
+        views: VIEWS.map(function (v) { return v.id; }),
+      });
+    }).then(function (r) {
+      var copyBtn = h("button", { type: "button", onclick: function (e) { copyText(r.markdown, e.currentTarget); }, text: "Copy report" });
+      body.replaceChildren();
+      append(body, [
+        h("p", null, "Saved to ", h("span", { class: "mono", text: r.path }), " ",
+          h("button", { type: "button", onclick: function (e) { copyText(r.path, e.currentTarget); }, text: "Copy path" })),
+        h("p", null, "Upload it to OneDrive: ", h("a", { href: "https://inscriptrx-my.sharepoint.com/", target: "_blank", rel: "noopener", text: "inscriptrx-my.sharepoint.com" })),
+        h("p", { class: "muted", text: "Paste it into an LLM and ask what to build or change next. It holds counts, settings, what you do on each tab, errors and timings; no emails, display names, notes, decks or paths." }),
+        h("div", { class: "toolbar" }, copyBtn,
+          h("button", { type: "button", onclick: function () { downloadText(r.path.split(/[\\/]/).pop(), r.markdown); }, text: "Download" })),
+        h("textarea", { class: "report-preview mono", readonly: true, rows: 16, "aria-label": "Report", value: r.markdown }),
+      ]);
+      body.querySelector("textarea").value = r.markdown;
+    }, function (e) { body.replaceChildren(h("p", { class: "notice", text: "Could not write the report: " + e.message })); });
+  }
+  function downloadText(name, text) {
+    var url = URL.createObjectURL(new Blob([text], { type: "text/markdown;charset=utf-8" }));
+    var a = h("a", { href: url, download: name });
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
+
   function exportNow() {
     if (READ_ONLY) return;
     mutate("POST", "/api/export").then(function (r) {
@@ -2124,6 +2228,9 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
       })),
       segmented("density", "Density", CFG.densities, chooseDensity),
       segmented("text", "Text size", CFG.textSizes, chooseText),
+      READ_ONLY ? null : h("fieldset", null, h("legend", { text: "Feedback" }),
+        h("button", { type: "button", onclick: function () { toggleSettings(false); exportUsageReport(); }, text: "Usage report for an LLM" }),
+        h("small", { class: "muted block", text: "How you use the dashboard, as Markdown to paste into an LLM. No emails, names or decks." })),
       h("div", { class: "screen-info", id: "screen-info" }));
     document.getElementById("settings").appendChild(settingsPanel);
     button.setAttribute("aria-expanded", "true");
@@ -2166,6 +2273,7 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
     cmds.push({ id: "refresh", group: "Data", label: "Refresh now", hotkey: "R", disabled: READ_ONLY, run: load });
     cmds.push({ id: "reimport", group: "Data", label: "Re-import the accounts CSV", disabled: READ_ONLY, run: reimport });
     cmds.push({ id: "export", group: "Export", label: "Write the static export", disabled: READ_ONLY, run: exportNow });
+    cmds.push({ id: "usage-report", group: "Export", label: "Usage report for an LLM", disabled: READ_ONLY, run: exportUsageReport });
     cmds.push({ id: "settings", group: "Settings", label: "Open display settings", run: function () { toggleSettings(true); } });
     CFG.themes.forEach(function (t) { cmds.push({ id: "theme-" + t.id, group: "Settings", label: "Theme: " + t.label + (display.theme === t.id ? " (in use)" : ""), disabled: display.theme === t.id, run: function () { chooseTheme(t.id); } }); });
     CFG.densities.forEach(function (d) { cmds.push({ id: "density-" + d.id, group: "Settings", label: "Density: " + d.label + (display.density === d.id ? " (in use)" : ""), disabled: display.density === d.id, run: function () { chooseDensity(d.id); } }); });
@@ -2281,6 +2389,7 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
       if (!c || c.disabled) return;
       close();
       // After the palette is gone, so a command that moves focus keeps it.
+      track("command", c.id);
       requestAnimationFrame(function () { c.run(); });
     }
     function fit() {
@@ -2342,6 +2451,7 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
   if (state.route.view === "activity") loadActivity();
   renderFooter();
   loadChangelog();
+  startUsageTracking();
   load();
   connectLive();
   // Polls run without changing data, so the status (last poll, file sizes) is refreshed on its own.

@@ -28,6 +28,15 @@ public sealed class MtgaDashOptions
     /// </summary>
     public string CardDbPath { get; set; } = "";
 
+    /// <summary>
+    /// Record what is done on the page (views, buttons, settings; never typed text, emails, names or cards) for
+    /// the usage report. Off: nothing is stored, and the report covers only the data and settings.
+    /// </summary>
+    public bool TrackUsage { get; set; } = true;
+
+    /// <summary>Usage events older than this are deleted.</summary>
+    public int UsageRetentionDays { get; set; } = 90;
+
     /// <summary>Where card images are kept. Empty means <c>card-images</c> beside the database.</summary>
     public string CardImageFolder { get; set; } = "";
 

@@ -49,6 +49,7 @@ src/MtgaDash/
                 CardImageStore: newest-art images from Scryfall, by card name, in card-images/ (with
                 not-found.json and last-run.json, the Status tab's record of the latest download)
   Game/         GameLauncher: starts MTGA at startup (LaunchGame) or from the Status tab, never twice
+  Usage/        UsageLog (page events in UsageEvents), UsageReport (Markdown for an LLM), RequestTimings, Redact
   Web/          PageRenderer (fills index.html placeholders), StaticExporter, DisplayOptions, BuildInfo,
                 StartPage (writes the address and opens the browser once listening)
   wwwroot/      index.html (the whole UI), updates.txt (changelog)
@@ -93,6 +94,11 @@ tools/Update-MtgaDash.ps1         stop, pull, publish, start
 * **Display settings are applied before first paint** by the boot script that `DisplayOptions.BootScript()`
   generates from the themes, densities and text-size lists. Adding a theme means a list entry there and its
   CSS block in `index.html`.
+* **Usage events never carry what identifies an account.** The page records views, palette command ids, button
+  labels and menu values through `track()`, with `P.usageLabel` removing emails and display names; link buttons
+  (card and account names) and typed text are not recorded. The server redacts again (`Redact.Text`), and
+  `UsageReport` shows counts, never emails, display names, notes, deck names or paths. `ApiTests` checks the report.
+  A new feature gets tracked for free if it is a button or a palette command.
 * **Charts are inline SVG with no library.** Two measures of different scale get two charts, never two axes.
 
 ## Things that will bite you

@@ -193,6 +193,17 @@ public sealed class Database
             ('Large and in Charge', '2026-11-23T00:00:00.000Z'),
             ('Out for Blood', '2026-11-23T00:00:00.000Z');
         """,
+        // 5: what the owner does on the page (views, buttons, settings), for the usage report an LLM can read.
+        """
+        CREATE TABLE UsageEvents(
+            Id INTEGER PRIMARY KEY,
+            AtUtc TEXT NOT NULL,
+            Session TEXT NOT NULL,
+            Kind TEXT NOT NULL,
+            Name TEXT NOT NULL,
+            Value TEXT NULL);
+        CREATE INDEX IX_UsageEvents_At ON UsageEvents(AtUtc);
+        """,
     ];
 }
 

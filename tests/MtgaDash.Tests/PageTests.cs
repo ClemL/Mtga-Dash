@@ -159,6 +159,24 @@ public sealed partial class PageTests
     }
 
     [TestMethod]
+    public void Usage_labels_and_paths_carry_no_account_or_value()
+    {
+        RunPure("""
+            assert.equal(P.usageLabel("Copy 12 emails"), "Copy # emails");
+            assert.equal(P.usageLabel("  Copy  base1+x@example.com  "), "Copy <email>");
+            assert.equal(P.usageLabel("Open Corsair#10001"), "Open <player>");
+            assert.equal(P.usageLabel(null), "");
+            assert.equal(P.usageLabel("4", true), "4", "a menu's value keeps its digits");
+            assert.equal(P.usageLabel("x@example.com", true), "<email>");
+            assert.equal(P.usageLabel("x".repeat(60)).length, 40);
+            assert.equal(P.routePattern("/api/accounts/base1%2Bx%40example.com"), "/api/accounts/{value}");
+            assert.equal(P.routePattern("/api/cards/123/holders"), "/api/cards/{value}/holders");
+            assert.equal(P.routePattern("/api/cards?minCopies=3&rarity=mythic,rare"), "/api/cards");
+            assert.equal(P.routePattern("/api/decknames/hidden/Keep%20the%20Peace"), "/api/decknames/hidden/{value}");
+            """);
+    }
+
+    [TestMethod]
     public void Preview_cards_are_as_large_as_fit_and_never_past_the_image_size()
     {
         RunPure("""

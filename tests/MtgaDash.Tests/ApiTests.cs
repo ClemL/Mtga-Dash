@@ -97,6 +97,38 @@ public sealed class ApiTests
     }
 
     [TestMethod]
+    public async Task The_usage_report_is_written_and_names_no_account()
+    {
+        Assert.AreEqual(HttpStatusCode.Forbidden, (await _http.PostAsJsonAsync("/api/usage", Array.Empty<object>())).StatusCode);
+        var events = new object[]
+        {
+            new { at = DateTime.UtcNow.AddMinutes(-3).ToString("o"), session = "t1", kind = "view", name = "accounts" },
+            new { at = DateTime.UtcNow.AddMinutes(-2).ToString("o"), session = "t1", kind = "click", name = "Copy base1+corsair@example.com", value = "accounts" },
+            new { at = DateTime.UtcNow.AddMinutes(-1).ToString("o"), session = "t1", kind = "command", name = "refresh" },
+            new { at = DateTime.UtcNow.ToString("o"), session = "t1", kind = "view", name = "cards" },
+        };
+        var stored = await (await _http.SendAsync(Write(HttpMethod.Post, "/api/usage", events))).Content.ReadFromJsonAsync<JsonElement>();
+        Assert.AreEqual(4, stored.GetProperty("stored").GetInt32());
+
+        Assert.AreEqual(HttpStatusCode.MethodNotAllowed, (await _http.GetAsync("/api/usage/report")).StatusCode);
+        var r = await _http.SendAsync(Write(HttpMethod.Post, "/api/usage/report", new { commands = new[] { "refresh", "export", "account-base1+corsair@example.com" }, views = new[] { "accounts", "cards", "totals" } }));
+        Assert.AreEqual(HttpStatusCode.OK, r.StatusCode);
+        var body = await r.Content.ReadFromJsonAsync<JsonElement>();
+        var path = body.GetProperty("path").GetString()!;
+        var md = body.GetProperty("markdown").GetString()!;
+        Assert.AreEqual(md, File.ReadAllText(path));
+        StringAssert.StartsWith(Path.GetFileName(path), "mtgadash_usage_");
+        StringAssert.Contains(md, "## What the owner does on the page");
+        StringAssert.Contains(md, "| accounts | 1 |");
+        StringAssert.Contains(md, "| totals | 0 |", "an offered view never opened is listed");
+        StringAssert.Contains(md, "Palette commands never run (1 of 2)");
+        StringAssert.Contains(md, "Copy <email>");
+        StringAssert.Contains(md, "| GET /api/review |", "server timings are included");
+        foreach (var personal in new[] { "@example.com", "Corsair#5", "Stranger#7", _folder })
+            Assert.IsFalse(md.Contains(personal, StringComparison.OrdinalIgnoreCase), personal);
+    }
+
+    [TestMethod]
     public async Task Export_is_a_post_only()
     {
         Assert.AreEqual(HttpStatusCode.MethodNotAllowed, (await _http.GetAsync("/api/export")).StatusCode);

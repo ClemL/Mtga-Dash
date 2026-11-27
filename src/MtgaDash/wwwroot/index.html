@@ -326,6 +326,15 @@ details > summary { cursor: pointer; padding: var(--cell-py) 0; }
 .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .thumb-ph { display: grid; place-items: center; width: 100%; height: 100%; box-sizing: border-box; border: 1px dashed var(--border-strong); background: var(--panel-2); color: var(--fg-dim); font-size: calc(11px * var(--text-scale)); }
 .thumb-chips { line-height: 1.2; }
+/* Hover previews: fixed to the window, above everything, and never the target of the pointer. */
+.hover-preview { position: fixed; z-index: 60; pointer-events: none; padding: var(--gap); background: var(--panel); border: 1px solid var(--border-strong); border-radius: 10px; box-shadow: var(--shadow); }
+.hover-preview[hidden] { display: none; }
+.preview-card { display: block; width: 100%; height: auto; aspect-ratio: 488 / 680; object-fit: cover; border-radius: 4.75% / 3.5%; }
+.preview-title { margin: 0 0 var(--gap); font-size: calc(13px * var(--text-scale)); }
+/* A fixed gap, not --gap: previewCardWidth sizes the cards around exactly 8 px. */
+.preview-grid { display: grid; gap: 8px; }
+.preview-item { position: relative; margin: 0; }
+.preview-item .card-ph { aspect-ratio: 488 / 680; }
 /* A small image next to each card name in the By account view; the chips wrap inside the cell. */
 .thumb-chip { display: inline-flex; align-items: center; gap: var(--gap); margin: 2px calc(var(--gap) * 1.5) 2px 0; vertical-align: middle; }
 .thumb-chip .thumb { width: 28px; }
@@ -576,7 +585,39 @@ var MtgaPure = (function () {
     return groups;
   }
 
+  /**
+   * An account's cards at 3+ copies for its hover preview, after the Cards tab's filters: 4 or more first, then
+   * cards that have an image, then by name. Returns the first `limit` and how many there are in all.
+   */
+  function topCards(cards, displayName, filters, limit) {
+    var all = [];
+    (cards || []).forEach(function (c) {
+      if (!cardMatches(c, filters)) return;
+      for (var i = 0; i < c.holders.length; i++) {
+        var hd = c.holders[i];
+        if (hd.displayName === displayName && hd.copies >= 3) { all.push({ card: c, copies: hd.copies }); break; }
+      }
+    });
+    all.sort(function (a, b) {
+      return Math.min(b.copies, 4) - Math.min(a.copies, 4) || (b.card.image ? 1 : 0) - (a.card.image ? 1 : 0)
+        || String(a.card.name || a.card.cardId).localeCompare(String(b.card.name || b.card.cardId));
+    });
+    return { total: all.length, cards: all.slice(0, limit) };
+  }
+
+  /**
+   * The width of each card when `count` cards are shown at once in a viewport, 4 to a row: as large as fits,
+   * never larger than the 488 px images themselves. `chrome` is the space the preview's own padding and title take.
+   */
+  function previewCardWidth(count, viewW, viewH, chrome) {
+    var cols = Math.max(1, Math.min(count, 4)), rows = Math.ceil(Math.max(count, 1) / cols), gap = 8;
+    var byWidth = (viewW - chrome.x - gap * (cols - 1)) / cols;
+    var byHeight = ((viewH - chrome.y - gap * (rows - 1)) / rows) * 488 / 680;
+    return Math.max(60, Math.floor(Math.min(488, byWidth, byHeight)));
+  }
+
   return {
+    topCards: topCards, previewCardWidth: previewCardWidth,
     parseChangelog: parseChangelog, filterCommands: filterCommands, accountText: accountText,
     matchesAccount: matchesAccount, snippet: snippet, relativeTime: relativeTime, loginClass: loginClass, isStale: isStale,
     cardMatches: cardMatches, groupByCopies: groupByCopies,
@@ -602,7 +643,8 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
     route: { view: "accounts" },
     filter: "",
     status: "",
-    sort: { key: "email", dir: 1 },
+    // Most recent login first: the accounts just played are the ones the owner looks at.
+    sort: { key: "lastLoginUtc", dir: -1 },
     staleDays: CFG.staleDays || 30,
     selectedEmail: null,
     data: { accounts: [], totals: null, review: null, statuses: [] },
@@ -793,6 +835,8 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
   }
 
   function render() {
+    // The element under the pointer is about to be replaced, and its mouseleave would never come.
+    hidePreview();
     renderTabs();
     renderSearchBox();
     var upd = document.getElementById("updated");
@@ -925,7 +969,7 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
     var body = h("tbody");
     rows.forEach(function (a) {
       var open = function () { go("account", a.email); };
-      body.appendChild(h("tr", {
+      body.appendChild(accountHover(h("tr", {
         class: "clickable" + (a.email === state.selectedEmail ? " selected" : ""), tabindex: "0", dataset: { email: a.email },
         onclick: open, onkeydown: function (e) { if (e.key === "Enter") open(); },
       },
@@ -940,7 +984,7 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
         h("td", { class: "num", text: a.snapshotId == null ? "—" : fmt(a.boosterTotal) }),
         h("td", { class: "num", text: a.displayName ? fmt(a.customDeckCount) : "—" }),
         h("td", { class: "num", text: a.ownedCount == null ? "—" : fmt(a.ownedCount) }),
-        h("td", { class: "notes", text: [a.notes, a.miscNotes].filter(Boolean).join(" · ") })));
+        h("td", { class: "notes", text: [a.notes, a.miscNotes].filter(Boolean).join(" · ") })), a));
     });
     view.appendChild(h("div", { class: "table-wrap" }, h("table", null, h("thead", null, head), body)));
     if (state.selectedEmail) {
@@ -1316,6 +1360,78 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
   }
 
   function cardLabel(c) { return c.name ? c.name : "#" + c.cardId; }
+
+  // ---- Hover previews: full-size card images. Only with a mouse: touch has no hover, and the click on the same
+  // element still opens the card or account there. The preview ignores the pointer, so it never steals the hover.
+  var hoverState = { el: null, timer: 0, owner: null, x: 0, y: 0 };
+  var CAN_HOVER = !!(window.matchMedia && window.matchMedia("(hover: hover) and (pointer: fine)").matches);
+  function hidePreview() {
+    clearTimeout(hoverState.timer);
+    hoverState.owner = null;
+    if (hoverState.el) hoverState.el.hidden = true;
+  }
+  function placePreview() {
+    var el = hoverState.el;
+    if (!el || el.hidden) return;
+    var vw = document.documentElement.clientWidth, vh = window.innerHeight, w = el.offsetWidth, ht = el.offsetHeight, m = 8;
+    var x = hoverState.x + 18 + w <= vw - m ? hoverState.x + 18 : hoverState.x - 18 - w;
+    el.style.left = Math.max(m, Math.min(x, vw - w - m)) + "px";
+    el.style.top = Math.max(m, Math.min(hoverState.y - ht / 2, vh - ht - m)) + "px";
+  }
+  // build() runs when the preview opens, so the content reflects the data at that moment.
+  function hoverPreview(target, delay, build) {
+    if (!CAN_HOVER || READ_ONLY) return target;
+    target.addEventListener("mouseenter", function (e) {
+      clearTimeout(hoverState.timer);
+      hoverState.owner = target; hoverState.x = e.clientX; hoverState.y = e.clientY;
+      // Moving from one row straight to the next swaps the preview at once instead of waiting again.
+      var wait = hoverState.el && !hoverState.el.hidden ? 0 : delay;
+      hoverState.timer = setTimeout(function () {
+        if (hoverState.owner !== target || !target.isConnected) return;
+        var content = build();
+        if (!content) { if (hoverState.el) hoverState.el.hidden = true; return; }
+        if (!hoverState.el) {
+          hoverState.el = h("div", { class: "hover-preview", "aria-hidden": "true" });
+          document.body.appendChild(hoverState.el);
+        }
+        hoverState.el.replaceChildren(content);
+        hoverState.el.hidden = false;
+        placePreview();
+        // Images not yet in the cache change the size once loaded.
+        hoverState.el.querySelectorAll("img").forEach(function (img) { if (!img.complete) img.addEventListener("load", placePreview, { once: true }); });
+      }, wait);
+    });
+    target.addEventListener("mousemove", function (e) { hoverState.x = e.clientX; hoverState.y = e.clientY; placePreview(); });
+    target.addEventListener("mouseleave", function () { if (hoverState.owner === target) hidePreview(); });
+    return target;
+  }
+  var PREVIEW_CHROME = { x: 40, y: 64 };
+  // One card at full size, for the Cards tab and account tables; nothing for a card with no image yet.
+  function cardHover(target, k) {
+    return hoverPreview(target, 150, function () {
+      if (!k.image) return null;
+      var w = P.previewCardWidth(1, document.documentElement.clientWidth, window.innerHeight, PREVIEW_CHROME);
+      return h("img", { class: "preview-card", src: k.image, alt: "", style: "width:" + w + "px" });
+    });
+  }
+  // Up to 8 of an account's 3+ copy rares and mythics, 4-ofs first, as large as the window allows.
+  function accountHover(target, a) {
+    return hoverPreview(target, 350, function () {
+      if (!a.displayName || !state.cards) return null;
+      var top = P.topCards(state.cards.cards, a.displayName, state.cardFilters, 8);
+      if (!top.cards.length) return null;
+      var w = P.previewCardWidth(top.cards.length, document.documentElement.clientWidth, window.innerHeight, PREVIEW_CHROME);
+      return h("div", null,
+        h("div", { class: "preview-title" }, h("strong", { text: a.displayName }),
+          h("span", { class: "muted", text: " · " + (top.total > top.cards.length ? top.cards.length + " of " + top.total : top.total) + " rares and mythics at 3+ copies" })),
+        h("div", { class: "preview-grid", style: "grid-template-columns:repeat(" + Math.min(top.cards.length, 4) + "," + w + "px)" },
+          top.cards.map(function (e) {
+            return h("figure", { class: "preview-item" },
+              e.card.image ? h("img", { class: "preview-card", src: e.card.image, alt: "" }) : cardPlaceholder(e.card),
+              h("span", { class: "copies-badge" + (e.copies >= 4 ? " four" : ""), text: "×" + e.copies }));
+          })));
+    });
+  }
   function rarityPill(r) { return r ? h("span", { class: "pill rarity-" + r, text: r }) : h("span", { class: "muted", text: "?" }); }
   function cardDbNotice(rarityKnown, status) {
     if (rarityKnown) return null;
@@ -1486,7 +1602,7 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
       h("tbody", null, cards.slice(0, 500).map(function (x) {
         return h("tr", null,
           h("td", { class: "thumb-cell" }, cardThumb(x)),
-          h("td", null, h("button", { type: "button", class: "link-btn", title: "Every account with " + cardLabel(x), onclick: function () { openCardHolders(x); }, text: cardLabel(x) }),
+          h("td", null, cardHover(h("button", { type: "button", class: "link-btn", title: "Every account with " + cardLabel(x), onclick: function () { openCardHolders(x); }, text: cardLabel(x) }), x),
             x.alchemy ? h("span", { class: "pill", title: "Alchemy (digital-only or rebalanced)", text: "A" }) : null),
           h("td", { class: "mono", text: costText(x) }),
           h("td", null, colorPips(x.colors)),
@@ -1523,7 +1639,7 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
           h("td", { class: "num", text: fmt(a.cards.length) }),
           h("td", { class: "notes thumb-chips" }, a.cards.map(function (e) {
             return h("span", { class: "thumb-chip" }, cardThumb(e.card),
-              h("button", { type: "button", class: "link-btn", onclick: function () { openCardHolders(e.card); }, text: cardLabel(e.card) + " ×" + e.copies }));
+              cardHover(h("button", { type: "button", class: "link-btn", onclick: function () { openCardHolders(e.card); }, text: cardLabel(e.card) + " ×" + e.copies }), e.card));
           })));
       })))));
   }
@@ -1579,8 +1695,8 @@ if (typeof module !== "undefined") module.exports = MtgaPure;
 
   // A small image for table rows; the offline snapshot and cards without an image get an empty frame.
   function cardThumb(k) {
-    return h("button", { type: "button", class: "thumb", title: cardLabel(k) + ": every account with it", onclick: function () { openCardHolders(k); } },
-      k.image && !READ_ONLY ? h("img", { src: k.image, alt: "", loading: "lazy" }) : h("span", { class: "thumb-ph", "aria-hidden": "true", text: "?" }));
+    return cardHover(h("button", { type: "button", class: "thumb", title: cardLabel(k) + ": every account with it", onclick: function () { openCardHolders(k); } },
+      k.image && !READ_ONLY ? h("img", { src: k.image, alt: "", loading: "lazy" }) : h("span", { class: "thumb-ph", "aria-hidden": "true", text: "?" })), k);
   }
 
   function cardPlaceholder(k) {

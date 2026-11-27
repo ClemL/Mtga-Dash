@@ -140,6 +140,38 @@ public sealed partial class PageTests
             """);
     }
 
+    [TestMethod]
+    public void An_accounts_hover_shows_its_3_plus_copy_cards_4s_and_images_first_after_the_filters()
+    {
+        RunPure("""
+            const f = { type: "any", ignoreLands: true, alchemy: "include" };
+            const card = (name, copies, extra) => Object.assign({ cardId: name.length, name, types: "Creature", holders: [{ displayName: "a#1", copies }, { displayName: "b#2", copies: 4 }] }, extra);
+            const cards = [
+              card("Three no image", 3), card("Three with image", 3, { image: "/i/3.jpg" }), card("Four", 4),
+              card("Two", 2), card("Land four", 4, { types: "Land" }), card("Six", 6, { image: "/i/6.jpg" }),
+            ];
+            const top = P.topCards(cards, "a#1", f, 3);
+            assert.equal(top.total, 4, "the 2-of and the land are left out");
+            assert.deepEqual(top.cards.map(e => e.card.name), ["Six", "Four", "Three with image"]);
+            assert.equal(P.topCards(cards, "nobody", f, 8).total, 0);
+            assert.equal(P.topCards(null, "a#1", f, 8).total, 0);
+            """);
+    }
+
+    [TestMethod]
+    public void Preview_cards_are_as_large_as_fit_and_never_past_the_image_size()
+    {
+        RunPure("""
+            const chrome = { x: 40, y: 64 };
+            assert.equal(P.previewCardWidth(1, 3840, 2160, chrome), 488, "one card on a big screen: its own size");
+            const eight = P.previewCardWidth(8, 1920, 1080, chrome);
+            assert.ok(eight * 4 + 3 * 8 + 40 <= 1920 && (eight * 680 / 488) * 2 + 8 + 64 <= 1080, "8 cards fit 1920x1080: " + eight);
+            assert.ok(eight > 300, "and are still large: " + eight);
+            assert.equal(P.previewCardWidth(3, 10000, 10000, chrome), 488);
+            assert.ok(P.previewCardWidth(8, 390, 700, chrome) >= 60);
+            """);
+    }
+
     private static string Boot(string stored, string storage = "ok") => Node.Run($$"""
         const vm = require("node:vm");
         const stored = {{stored}};

@@ -5,7 +5,9 @@ A local Windows dashboard for a few hundred MTG Arena accounts. It watches a fol
 single-page dashboard on `http://localhost:5080` that updates live.
 
 - **Accounts**: every account from the CSV, with gems, gold, wildcards, boosters, custom decks and a
-  color-coded last login. Search, filter by status, sort by any column, click for the detail.
+  color-coded last login, most recent login first. Search, filter by status, sort by any column, click for
+  the detail. Hover over a row to see up to 8 of the account's rares and mythics held at 3+ copies, 4-ofs
+  first, as large as the window allows.
 - **Stale**: accounts never logged in or not logged in for N days, oldest first, with one-click email copy.
 - **Totals**: gems, gold and wildcards across all accounts, last-login buckets, and the 20 accounts with the
   most boosters, rare wildcards, draft tokens and event tokens (token boards appear once any account has
@@ -77,7 +79,7 @@ Any setting can be overridden on the command line, e.g. `--MtgaDash:Port=5090`.
 | `BrowserReopenMinutes` | `30` | No new browser tab within this many minutes of the last, so a crash restart opens none. |
 | `OpenBrowser` | `true` | Open the dashboard in your default browser once it is running (only where there is a desktop). |
 | `StartPage` | `/#/activity` | The page opened at startup and written to the console, e.g. `/#/accounts`. |
-| `LaunchGame` | `false` | Start MTGA when the dashboard starts, unless it is already running; see below. |
+| `LaunchGame` | `true` | Start MTGA when the dashboard starts, unless it is already running; see below. |
 | `GamePath` | `C:\Program Files\Wizards of the Coast\MTGA\MTGA.exe` | The game to start, or a launcher URI such as `steam://rungameid/2141910`. |
 | `CardImageFolder` | *(empty)* | Where card images are kept; empty means `card-images` beside the database. |
 | `ExceptionsPath` | *(empty)* | Where Review-tab mappings are saved; empty means `account-exceptions.json` beside the database. |
@@ -187,9 +189,9 @@ the only output; register the task with `-Interactive` (below) to get the browse
 
 ## Start MTGA with the dashboard
 
-Set `"LaunchGame": true` (in `appsettings.Production.json` beside the published exe) and, if MTGA is not in
-the default folder, `GamePath`. Each time the dashboard starts it starts MTGA too, unless MTGA is already
-running: it never opens a second copy. The Status tab shows whether MTGA is running and has a
+Each time the dashboard starts it starts MTGA too, unless MTGA is already running: it never opens a second
+copy. If MTGA is not in the default folder, set `GamePath` (in `appsettings.Production.json` beside the
+published exe); to stop it, set `"LaunchGame": false` there. The Status tab shows whether MTGA is running and has a
 **Start MTGA** button (also `Ctrl+K` → "Start MTGA"), which works even with `LaunchGame` off.
 
 The hidden logon task has no desktop, so a game it started would be invisible; the dashboard refuses and
@@ -334,8 +336,8 @@ mythics some account holds at 3+ copies are fetched; card names need `CardDbPath
 once after the dashboard starts, missing images are downloaded in the background. Settings:
 `AutoDownloadCardImages` (default `true`) and `AutoDownloadDelaySeconds` (default `120`). It only asks for
 what is missing, so a quiet period with nothing new makes no requests. Thumbnails appear in the Cards tab's
-By card and By account views and in each account's Known rares table; click one, or the name, for the full
-image and every account holding the card.
+By card and By account views and in each account's Known rares table. Hover over a thumbnail or a card name
+on the Cards tab to see the card at full size; click it for every account holding the card.
 
 The Status tab shows the last download, whatever started it (automatic, the button or the command line): when
 it finished, and the names it saved, found no image for and failed on. It is kept in `card-images\last-run.json`,
